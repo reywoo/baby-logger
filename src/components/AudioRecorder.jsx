@@ -1,16 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { Mic, Square, Loader2, Sparkles, AlertCircle, AlertTriangle, RotateCcw } from 'lucide-react';
 import { playStartChime, playStopChime } from '../utils/audioChimes';
+
+const MAX_RECORDING_SECONDS = 180; // 3 minutes limit
 
 export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
+  const secondsRef = useRef(0);
+  const isCancelledRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -18,8 +23,44 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
     };
   }, []);
 
+  const handleTimeout = () => {
+    // 1. Set cancellation flag so onstop ignores & discards audio payload
+    isCancelledRef.current = true;
+
+    // 2. Clear timer interval
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // 3. Stop recording stream safely
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.warn('Error stopping MediaRecorder on timeout:', err);
+      }
+    }
+
+    // 4. Drop and delete audio data immediately
+    audioChunksRef.current = [];
+
+    // 5. Play stop chime & update state
+    playStopChime();
+    setIsRecording(false);
+    setIsProcessing(false);
+
+    // 6. Show timeout error window pop up
+    setShowTimeoutModal(true);
+  };
+
   const startRecording = async () => {
     setErrorMsg('');
+    setShowTimeoutModal(false);
+    isCancelledRef.current = false;
+    secondsRef.current = 0;
+    setRecordingSeconds(0);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
@@ -40,27 +81,40 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0 && !isCancelledRef.current) {
           audioChunksRef.current.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
-        // Stop stream tracks
+        // Stop all audio stream tracks
         stream.getTracks().forEach((track) => track.stop());
 
-        // Process audio with backend & Gemini 1.5 Flash
+        // If recording timed out or was cancelled, drop data & do not call Gemini
+        if (isCancelledRef.current) {
+          audioChunksRef.current = [];
+          isCancelledRef.current = false;
+          return;
+        }
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+        audioChunksRef.current = [];
+
+        // Process audio with backend & Gemini
         await sendAudioToGemini(audioBlob, mimeType || 'audio/webm');
       };
 
       playStartChime();
-      mediaRecorder.start(200); // Collect data every 200ms
+      mediaRecorder.start(200); // Collect data chunk every 200ms
       setIsRecording(true);
-      setRecordingSeconds(0);
 
       timerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
+        secondsRef.current += 1;
+        setRecordingSeconds(secondsRef.current);
+
+        if (secondsRef.current >= MAX_RECORDING_SECONDS) {
+          handleTimeout();
+        }
       }, 1000);
     } catch (err) {
       console.error('Microphone error:', err);
@@ -71,7 +125,11 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       playStopChime();
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      isCancelledRef.current = false;
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
@@ -158,7 +216,7 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
             </span>
           ) : isRecording ? (
             <span>
-              🔴 {t.recording} ({formatTimer(recordingSeconds)}) - {t.tapToStop}
+              🔴 {t.recording} ({formatTimer(recordingSeconds)} / 3:00) - {t.tapToStop}
             </span>
           ) : (
             <span>{t.tapToSpeak}</span>
@@ -172,6 +230,55 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
           <span>{errorMsg}</span>
         </div>
       )}
+
+      {/* Timeout Error Modal Window */}
+      {showTimeoutModal && (
+        <div className="modal-overlay" style={{ zIndex: 200 }}>
+          <div className="glass-panel modal-content" style={{ textAlign: 'center', padding: '1.75rem 1.5rem', maxWidth: '420px' }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.2)',
+              border: '2px solid rgba(239, 68, 68, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem auto',
+              color: '#ef4444'
+            }}>
+              <AlertTriangle size={32} />
+            </div>
+
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-main)' }}>
+              {lang === 'zh' ? '录音已超时 (超过 3 分钟)' : 'Recording Time Limit Exceeded'}
+            </h3>
+
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '1.5rem' }}>
+              {lang === 'zh'
+                ? '录音时长已超过 3 分钟限制。该录音已自动清空丢弃，未发送给 Gemini 解析。请重新录制一段简短语音。'
+                : 'Recording cannot exceed 3 minutes. Your audio data has been discarded and was not sent to Gemini. Please try again with a shorter recording.'}
+            </p>
+
+            <button
+              onClick={() => setShowTimeoutModal(false)}
+              className="glass-button"
+              style={{
+                width: '100%',
+                justifyContent: 'center',
+                background: 'var(--danger)',
+                borderColor: 'var(--danger)',
+                padding: '0.8rem',
+                fontSize: '0.95rem'
+              }}
+            >
+              <RotateCcw size={18} />
+              {lang === 'zh' ? '知道了，重新录制' : 'Got it, Try Again'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

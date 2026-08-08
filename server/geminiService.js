@@ -1,5 +1,29 @@
 import { GoogleGenAI } from '@google/genai';
 
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+
+async function generateWithGemini(ai, contents, config) {
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  try {
+    return await ai.models.generateContent({
+      model,
+      contents,
+      config,
+    });
+  } catch (err) {
+    // If user's specific key has a temporary rate limit or error, retry once with gemini-flash-latest
+    if (model !== 'gemini-flash-latest') {
+      console.warn(`Model ${model} failed (${err.status || err.message}), retrying with gemini-flash-latest...`);
+      return await ai.models.generateContent({
+        model: 'gemini-flash-latest',
+        contents,
+        config,
+      });
+    }
+    throw err;
+  }
+}
+
 function formatSubCategoryRules(subCategoriesMap) {
 
   if (!subCategoriesMap || typeof subCategoriesMap !== 'object') {
@@ -26,7 +50,7 @@ function extractJsonObject(text) {
 }
 
 /**
- * Service to process multimodal audio input or natural text with Gemini 2.5 Flash
+ * Service to process multimodal audio input or natural text with Gemini
  */
 export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -72,29 +96,25 @@ Return ONLY a valid JSON object matching this exact structure:
 }`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                data: base64Audio,
-                mimeType: mimeType || 'audio/webm',
-              },
+    const contents = [
+      {
+        role: 'user',
+        parts: [
+          {
+            inlineData: {
+              data: base64Audio,
+              mimeType: mimeType || 'audio/webm',
             },
-            {
-              text: prompt,
-            },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
+          },
+          {
+            text: prompt,
+          },
+        ],
       },
-    });
+    ];
+    const config = { responseMimeType: 'application/json' };
 
+    const response = await generateWithGemini(ai, contents, config);
     return extractJsonObject(response.text);
   } catch (error) {
     console.error('Gemini Audio Processing Error:', error);
@@ -103,7 +123,7 @@ Return ONLY a valid JSON object matching this exact structure:
 }
 
 /**
- * Process text prompt fallback with Gemini 2.5 Flash
+ * Process text prompt fallback with Gemini
  */
 export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -140,19 +160,10 @@ Return ONLY a valid JSON object:
 }`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
 
+    const response = await generateWithGemini(ai, contents, config);
     return extractJsonObject(response.text);
   } catch (error) {
     console.error('Gemini Text Processing Error:', error);
@@ -161,7 +172,7 @@ Return ONLY a valid JSON object:
 }
 
 /**
- * Sanity check and format validation for log input fields using Gemini Flash
+ * Sanity check and format validation for log input fields using Gemini
  */
 export async function validateAndFormatLogWithGemini(logData, userApiKey) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
@@ -230,13 +241,12 @@ Return ONLY a valid JSON object with this exact structure:
 }`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-flash-latest',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { responseMimeType: 'application/json' },
-    });
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
 
+    const response = await generateWithGemini(ai, contents, config);
     const parsed = extractJsonObject(response.text);
+
     return {
       isValid: typeof parsed.isValid === 'boolean' ? parsed.isValid : true,
       reason: parsed.reason || null,
@@ -257,6 +267,7 @@ Return ONLY a valid JSON object with this exact structure:
     };
   }
 }
+
 
 
 
