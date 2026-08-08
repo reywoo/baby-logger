@@ -105,6 +105,9 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
   const [isValidating, setIsValidating] = useState(false);
   const [sanityWarning, setSanityWarning] = useState(null);
 
+  const isStrictNumeric = category === 'feeding' || (category === 'health' && subCategory === 'temperature');
+  const hasInvalidChars = isStrictNumeric && amount.trim() !== '' && /[^\d\.]/.test(amount.trim());
+
   const getCategoryIcon = (cat) => {
     switch (cat) {
       case 'feeding': return <Milk size={18} />;
