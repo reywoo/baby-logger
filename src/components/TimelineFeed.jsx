@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X } from 'lucide-react';
+import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle } from 'lucide-react';
 
 export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) {
 
   const isZh = lang === 'zh';
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [logToDelete, setLogToDelete] = useState(null);
 
   // Format date key YYYY-MM-DD from startTime, timestamp or displayDate
   const getLogDateKey = (log) => {
@@ -341,7 +342,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                             </button>
 
                             <button
-                              onClick={() => onDeleteLog(log.id)}
+                              onClick={() => setLogToDelete(log)}
                               style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', opacity: 0.7 }}
                               title={isZh ? '删除记录' : 'Delete entry'}
                             >
@@ -403,6 +404,55 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
             </div>
           );
         })
+      )}
+
+      {/* Delete Confirmation Modal Overlay */}
+      {logToDelete && (
+        <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0, 0, 0, 0.8)' }}>
+          <div className="glass-panel modal-content" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '1.75rem 1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem', color: '#f87171' }}>
+              <AlertTriangle size={44} />
+            </div>
+            <h4 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f87171' }}>
+              {isZh ? '确认删除此记录？' : 'Confirm Delete Log?'}
+            </h4>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              {logToDelete.originalZh || logToDelete.summaryEn || (isZh ? '记录删除后将无法恢复。' : 'This entry will be permanently removed.')}
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setLogToDelete(null)}
+                className="glass-button"
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                <X size={16} />
+                <span>{isZh ? '取消' : 'Cancel'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteLog(logToDelete.id);
+                  setLogToDelete(null);
+                }}
+                className="glass-button"
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  background: '#ef4444',
+                  borderColor: '#ef4444',
+                  color: '#fff',
+                  fontWeight: 600
+                }}
+              >
+                <Trash2 size={16} />
+                <span>{isZh ? '确认删除' : 'Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Full Image Preview Modal */}
