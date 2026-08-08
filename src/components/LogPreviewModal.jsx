@@ -49,11 +49,22 @@ function toDatetimeLocal(isoOrDateStr) {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+function extractNumberOnly(val) {
+  if (!val || typeof val !== 'string') return '';
+  const match = val.match(/(\d+(?:\.\d+)?)/);
+  return match ? match[1] : '';
+}
+
 export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
   const isEditing = !!data.id;
-  const [category, setCategory] = useState(data.category || 'feeding');
-  const [subCategory, setSubCategory] = useState(data.subCategory || 'formula');
-  const [amount, setAmount] = useState(data.amount || '');
+  const initialCat = data.category || 'feeding';
+  const initialSubCat = data.subCategory || 'formula';
+  const initialIsStrictNumeric = initialCat === 'feeding' || (initialCat === 'health' && initialSubCat === 'temperature');
+  const initialAmount = initialIsStrictNumeric ? extractNumberOnly(data.amount) : (data.amount || '');
+
+  const [category, setCategory] = useState(initialCat);
+  const [subCategory, setSubCategory] = useState(initialSubCat);
+  const [amount, setAmount] = useState(initialAmount);
 
   const presets = PRESET_SUBCATEGORIES[category] || [];
   const subCatMap = new Map();
@@ -180,7 +191,16 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
         }
 
         const hasAmount = category === 'feeding' || category === 'health';
-        const finalAmount = hasAmount ? amount : '';
+        let finalAmount = hasAmount ? amount.trim() : '';
+
+        if (category === 'feeding' && finalAmount) {
+          const num = extractNumberOnly(finalAmount) || finalAmount;
+          finalAmount = `${num} ml`;
+        } else if (category === 'health' && subCategory === 'temperature' && finalAmount) {
+          const num = extractNumberOnly(finalAmount) || finalAmount;
+          finalAmount = `${num} °C`;
+        }
+
         const finalDuration = isInstantCategory ? '' : duration;
 
         const draftEntry = {
@@ -407,15 +427,26 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
             <div className="responsive-grid-2col">
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                  🍼 {t.amountLabel}
+                  🍼 {t.amountLabel} {lang === 'zh' ? '(纯数字，单位 ml)' : '(Numeric only, in ml)'}
                 </label>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="e.g. 120 ml"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. 120"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    style={{ flex: 1, borderColor: hasInvalidChars ? '#ef4444' : undefined }}
+                  />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.55rem 0.75rem', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '0.5rem', border: '1px solid var(--card-border)', color: 'var(--primary-accent)' }}>
+                    ml
+                  </span>
+                </div>
+                {hasInvalidChars && (
+                  <div style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.3rem', fontWeight: 600 }}>
+                    ⚠️ {lang === 'zh' ? '喂养量仅支持输入纯数字，单位固定为 ml（请勿输入字母/单位）' : 'Numbers only allowed. Unit is fixed to ml (do not enter letters).'}
+                  </div>
+                )}
               </div>
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
@@ -434,15 +465,30 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
           ) : category === 'health' ? (
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                💊 {lang === 'zh' ? '剂量 / 体温数值 (Dosage / Temp Value)' : 'Dosage / Temp Value'}
+                💊 {subCategory === 'temperature'
+                  ? (lang === 'zh' ? '体温数值 (纯数字，单位 °C)' : 'Temperature Value (Numeric only, in °C)')
+                  : (lang === 'zh' ? '剂量 / 用药说明 (Dosage / Details)' : 'Dosage / Details')}
               </label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="e.g. 5 ml, 36.8 °C"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder={subCategory === 'temperature' ? "e.g. 36.8" : "e.g. 5 ml"}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  style={{ flex: 1, borderColor: hasInvalidChars ? '#ef4444' : undefined }}
+                />
+                {subCategory === 'temperature' && (
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.55rem 0.75rem', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '0.5rem', border: '1px solid var(--card-border)', color: 'var(--primary-accent)' }}>
+                    °C
+                  </span>
+                )}
+              </div>
+              {hasInvalidChars && (
+                <div style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.3rem', fontWeight: 600 }}>
+                  ⚠️ {lang === 'zh' ? '体温仅支持输入纯数字，单位固定为 °C（请勿输入字母/单位）' : 'Temperature must be numbers only. Unit is fixed to °C.'}
+                </div>
+              )}
             </div>
           ) : category === 'sleep' || category === 'activity' || category === 'other' ? (
             <div>
@@ -615,7 +661,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
             onClick={() => handleConfirmSave()}
             className="glass-button"
             style={{ flex: 1, justifyContent: 'center', background: 'var(--primary-accent)', borderColor: 'var(--primary-accent)' }}
-            disabled={isSubmitting || isValidating}
+            disabled={isSubmitting || isValidating || hasInvalidChars}
           >
             {isValidating ? (
               <>

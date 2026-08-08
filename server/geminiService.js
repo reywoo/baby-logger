@@ -197,8 +197,8 @@ Perform TWO checks:
 Determine if the Amount or Duration inputs make realistic physical sense AND obey mandatory unit rules for a baby log:
 
 MANDATORY UNIT RULES (isValid = false if violated):
-- Rule 1 - Feeding (Formula & Breastmilk): Formula ("formula") and Breastmilk ("breastmilk") feeding amounts MUST ALWAYS be in "ml" (or "mL"). Using grams ("350g", "350 g"), liters ("120L"), ounces ("4 oz"), or other units is STRICTLY INVALID. If given e.g. "350g", "350 g", "4 oz", set isValid = false, set reason to explain that formula/breastmilk feeding must be in ml (e.g. "Formula and breastmilk feeding amount must be in ml, '350g' is an inconsistent unit / 配方奶与母乳喂养单位必须使用 ml"), and set suggestedAmount to the value in ml (e.g. "350 ml").
-- Rule 2 - Health (Temperature / Temp Check): Body temperature checks MUST ALWAYS be in Celsius (°C). If given in Fahrenheit (e.g. "98.6°F", "98.6F", "100 F") or invalid units, set isValid = false, set reason to explain that temperature must be in Celsius (°C), and set suggestedAmount converted to Celsius (e.g. "37.0 °C").
+- Rule 1 - Feeding (All subcategories): Amount MUST ALWAYS be treated in "ml". Plain numbers without units (e.g. "25", "120") are VALID and MUST automatically be formatted as "25 ml", "120 ml". Using non-ml units like grams ("350g"), liters ("120L"), ounces ("4 oz") is INVALID (isValid = false, suggest in ml e.g. "350 ml").
+- Rule 2 - Health (Temperature / Temp Check): Body temperature checks MUST ALWAYS be in Celsius (°C). Plain numbers (e.g. "36.8") are VALID and automatically formatted as "36.8 °C". If given in Fahrenheit (e.g. "98.6°F", "98.6F") or invalid units, set isValid = false and set suggestedAmount converted to Celsius (e.g. "37.0 °C").
 
 GENERAL PHYSICAL SANITY RULES (isValid = false if violated):
 - Feeding amount: Single feeding > 500ml or negative number makes NO sense for a baby. "120L" or "5L" makes NO sense.
@@ -214,8 +214,8 @@ If any sanity or unit rule is violated:
 2. FORMATTING / STANDARDIZATION CHECK:
 Format the valid / accepted values cleanly and consistently:
 - Remove extra spaces (e.g. "120    ml" -> "120 ml", "15   mins" -> "15 mins").
-- Temperature: always format as "X.X °C" (e.g. "36.8" -> "36.8 °C", "37C" -> "37.0 °C").
-- Feeding amount (formula/breastmilk): always format as "X ml" (e.g. "120" -> "120 ml").
+- Temperature: always format as "X.X °C" (e.g. "36.8" -> "36.8 °C", "37" -> "37.0 °C").
+- Feeding amount: always format as "X ml" (e.g. "25" -> "25 ml", "120" -> "120 ml").
 - Time duration: standardize format (e.g. "15m" -> "15 mins", "1.5h" -> "1 hr 30 mins").
 - Medicine dosage / other health value: clean up spacing, leave unit as provided if non-standard (e.g. "2.5 ml", "1 drop").
 
