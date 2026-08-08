@@ -1,21 +1,21 @@
 import { GoogleGenAI } from '@google/genai';
 
-const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const FALLBACK_GEMINI_MODEL = 'gemini-flash-lite-latest';
 
 async function generateWithGemini(ai, contents, config) {
-  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  const primaryModel = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   try {
     return await ai.models.generateContent({
-      model,
+      model: primaryModel,
       contents,
       config,
     });
   } catch (err) {
-    // If user's specific key has a temporary rate limit or error, retry once with gemini-flash-latest
-    if (model !== 'gemini-flash-latest') {
-      console.warn(`Model ${model} failed (${err.status || err.message}), retrying with gemini-flash-latest...`);
+    if (primaryModel !== FALLBACK_GEMINI_MODEL) {
+      console.warn(`Primary model ${primaryModel} failed (${err.status || err.message}), retrying with fallback model ${FALLBACK_GEMINI_MODEL}...`);
       return await ai.models.generateContent({
-        model: 'gemini-flash-latest',
+        model: FALLBACK_GEMINI_MODEL,
         contents,
         config,
       });
