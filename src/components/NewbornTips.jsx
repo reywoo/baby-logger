@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Search, Info, Sparkles, BookOpen, Layers, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, Sparkles, BookOpen, Layers, CheckCircle2 } from 'lucide-react';
 
 const tipsData = [
   {
@@ -473,7 +473,6 @@ export default function NewbornTips({ lang }) {
   });
 
   const [selectedFilterStage, setSelectedFilterStage] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
 
   const toggleStage = (id) => {
     setExpandedStages((prev) => ({
@@ -499,24 +498,10 @@ export default function NewbornTips({ lang }) {
   };
 
   const filteredData = tipsData.filter((item) => {
-    // Stage filter pill
     if (selectedFilterStage !== 'all' && item.id !== selectedFilterStage) {
       return false;
     }
-    // Search query filter
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const textToSearch = [
-      item.titleZh, item.titleEn,
-      item.summaryZh, item.summaryEn,
-      item.feeding.amountZh, item.feeding.amountEn,
-      item.sleep.wakeWindowZh, item.sleep.wakeWindowEn,
-      ...item.feeding.rulesZh, ...item.feeding.rulesEn,
-      ...item.sleep.rulesZh, ...item.sleep.rulesEn,
-      ...item.careTips.itemsZh, ...item.careTips.itemsEn,
-    ].join(' ').toLowerCase();
-
-    return textToSearch.includes(q);
+    return true;
   });
 
   const isZh = lang === 'zh';
@@ -539,32 +524,16 @@ export default function NewbornTips({ lang }) {
           </div>
         </div>
 
-        {/* Search bar & Controls */}
-        <div className="tips-controls">
-          <div className="tips-search-box">
-            <Search size={16} className="search-icon" />
-            <input
-              type="text"
-              className="input-field tips-search-input"
-              placeholder={isZh ? '搜索关键字 (例: 30-60ml, 翻身, 醒着睡, 辅食)...' : 'Search tips (e.g. wake window, rolling, solids)...'}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="clear-search-btn" onClick={() => setSearchQuery('')}>×</button>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-            <button className="glass-button tips-small-btn" onClick={expandAll}>
-              <ChevronDown size={14} />
-              {isZh ? '展开全部' : 'Expand All'}
-            </button>
-            <button className="glass-button tips-small-btn" onClick={collapseAll}>
-              <ChevronUp size={14} />
-              {isZh ? '折叠全部' : 'Collapse All'}
-            </button>
-          </div>
+        {/* Controls: Expand/Collapse All */}
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+          <button className="glass-button tips-small-btn" onClick={expandAll}>
+            <ChevronDown size={14} />
+            {isZh ? '展开全部' : 'Expand All'}
+          </button>
+          <button className="glass-button tips-small-btn" onClick={collapseAll}>
+            <ChevronUp size={14} />
+            {isZh ? '折叠全部' : 'Collapse All'}
+          </button>
         </div>
 
         {/* Stage Filter Quick Pills */}
