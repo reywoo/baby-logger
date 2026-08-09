@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer } from 'lucide-react';
+import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer, BookOpen } from 'lucide-react';
 import LanguageToggle from './components/LanguageToggle';
 import AudioRecorder from './components/AudioRecorder';
 import QuickLogButtons from './components/QuickLogButtons';
@@ -8,6 +8,7 @@ import TimelineFeed from './components/TimelineFeed';
 import DataExport from './components/DataExport';
 import PasscodeLock from './components/PasscodeLock';
 import FeedingTimers from './components/FeedingTimers';
+import NewbornTips from './components/NewbornTips';
 
 const translations = {
   zh: {
@@ -16,6 +17,7 @@ const translations = {
     navVoice: '语音记录',
     navTimeline: '日志动态',
     navTimer: '喂养计时',
+    navTips: '育儿指南',
     navExport: '数据导出',
 
     voiceTitle: '长按或点击说话',
@@ -52,6 +54,7 @@ const translations = {
     navVoice: 'Voice Log',
     navTimeline: 'Log History',
     navTimer: 'Timers',
+    navTips: 'Newborn Tips',
     navExport: 'Export Data',
     voiceTitle: 'Tap or Hold to Speak',
     voiceSubtitle: 'Speak in Chinese or English (e.g., "Baby drank 150ml milk at 2pm")',
@@ -416,6 +419,10 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'tips' && (
+          <NewbornTips lang={lang} />
+        )}
+
         {activeTab === 'export' && (
           <DataExport
             logs={logs}
@@ -460,6 +467,14 @@ export default function App() {
         >
           <Timer size={20} />
           <span>{t.navTimer}</span>
+        </button>
+
+        <button
+          className={`nav-item ${activeTab === 'tips' ? 'active' : ''}`}
+          onClick={() => setActiveTab('tips')}
+        >
+          <BookOpen size={20} />
+          <span>{t.navTips}</span>
         </button>
 
         <button

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, FileText, RotateCcw, Plus, Trash2, Clock, AlertTriangle, ShieldCheck, Milk } from 'lucide-react';
+import { Play, Square, FileText, RotateCcw, Plus, Trash2, Clock, AlertTriangle, ShieldCheck, Milk, X } from 'lucide-react';
 
 export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang = 'zh' }) {
   const [timersState, setTimersState] = useState({
@@ -11,6 +11,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
   const [now, setNow] = useState(new Date());
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [bottleToDelete, setBottleToDelete] = useState(null);
 
   // 1-second ticker for smooth countdown display
   useEffect(() => {
@@ -552,7 +553,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
                     </div>
 
                     <button
-                      onClick={() => handleFinishBottle(bottle.id)}
+                      onClick={() => setBottleToDelete(bottle)}
                       title={lang === 'zh' ? '喝完或丢弃' : 'Finish or Discard'}
                       style={{
                         background: 'transparent',
@@ -599,6 +600,57 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
           </div>
         )}
       </div>
+
+      {/* Bottle Delete Confirmation Modal Overlay */}
+      {bottleToDelete && (
+        <div className="modal-overlay" style={{ zIndex: 1100, background: 'rgba(0, 0, 0, 0.8)' }}>
+          <div className="glass-panel modal-content" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '1.75rem 1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.75rem', color: '#f87171' }}>
+              <AlertTriangle size={44} />
+            </div>
+            <h4 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f87171' }}>
+              {lang === 'zh' ? '确认移除开封保鲜记录？' : 'Confirm Remove Bottle?'}
+            </h4>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              {lang === 'zh'
+                ? `要移除 ${bottleToDelete.bottleType}（开封于 ${formatDateTimeStr(bottleToDelete.openedAt)}）的 Ready-To-Feed 开封保鲜记录吗？`
+                : `Remove ${bottleToDelete.bottleType} bottle (Opened: ${formatDateTimeStr(bottleToDelete.openedAt)}) from active tracking?`}
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setBottleToDelete(null)}
+                className="glass-button"
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                <X size={16} />
+                <span>{lang === 'zh' ? '取消' : 'Cancel'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleFinishBottle(bottleToDelete.id);
+                  setBottleToDelete(null);
+                }}
+                className="glass-button"
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  background: '#ef4444',
+                  borderColor: '#ef4444',
+                  color: '#fff',
+                  fontWeight: 600
+                }}
+              >
+                <Trash2 size={16} />
+                <span>{lang === 'zh' ? '确认删除' : 'Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

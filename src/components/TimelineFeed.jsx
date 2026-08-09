@@ -1,11 +1,41 @@
 import React, { useState, useMemo } from 'react';
 import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle } from 'lucide-react';
+import { parseDurationToMinutes } from '../utils/timeUtils';
 
 export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) {
 
   const isZh = lang === 'zh';
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [logToDelete, setLogToDelete] = useState(null);
+
+  // Helper to get total sleep minutes from a log item
+  const getLogSleepMinutes = (log) => {
+    if (log.category !== 'sleep') return 0;
+    if (log.startTime && log.endTime) {
+      const start = new Date(log.startTime).getTime();
+      const end = new Date(log.endTime).getTime();
+      if (!isNaN(start) && !isNaN(end) && end > start) {
+        return Math.round((end - start) / (1000 * 60));
+      }
+    }
+    if (log.duration) {
+      return parseDurationToMinutes(log.duration);
+    }
+    return 0;
+  };
+
+  const formatTotalSleepDisplay = (totalMins, isZhLang) => {
+    if (!totalMins || totalMins <= 0) return isZhLang ? '0分' : '0m';
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (hrs > 0 && mins > 0) {
+      return isZhLang ? `${hrs}小时${mins}分` : `${hrs}h ${mins}m`;
+    } else if (hrs > 0) {
+      return isZhLang ? `${hrs}小时` : `${hrs}h`;
+    } else {
+      return isZhLang ? `${mins}分钟` : `${mins}m`;
+    }
+  };
 
   // Format date key YYYY-MM-DD from startTime, timestamp or displayDate
   const getLogDateKey = (log) => {
@@ -94,6 +124,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
   };
 
   // Today's summary totals
+  const feedingCount = todayLogs.filter((l) => l.category === 'feeding').length;
   const totalMilkMl = todayLogs
     .filter((l) => l.category === 'feeding')
     .reduce((sum, l) => {
@@ -103,6 +134,9 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
 
   const diaperCount = todayLogs.filter((l) => l.category === 'diaper').length;
   const sleepCount = todayLogs.filter((l) => l.category === 'sleep').length;
+  const totalSleepMinutes = todayLogs
+    .filter((l) => l.category === 'sleep')
+    .reduce((sum, l) => sum + getLogSleepMinutes(l), 0);
 
   const getBadgeClass = (category) => {
     switch (category) {
@@ -127,15 +161,19 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
   };
 
   const getDaySummary = (dayLogs) => {
-    const milk = dayLogs
-      .filter((l) => l.category === 'feeding')
-      .reduce((sum, l) => {
-        const match = l.amount ? l.amount.match(/(\d+)/) : null;
-        return sum + (match ? parseInt(match[1], 10) : 0);
-      }, 0);
-    const sleep = dayLogs.filter((l) => l.category === 'sleep').length;
+    const fLogs = dayLogs.filter((l) => l.category === 'feeding');
+    const milk = fLogs.reduce((sum, l) => {
+      const match = l.amount ? l.amount.match(/(\d+)/) : null;
+      return sum + (match ? parseInt(match[1], 10) : 0);
+    }, 0);
+    const fCount = fLogs.length;
+
+    const sLogs = dayLogs.filter((l) => l.category === 'sleep');
+    const sCount = sLogs.length;
+    const sMins = sLogs.reduce((sum, l) => sum + getLogSleepMinutes(l), 0);
+
     const diaper = dayLogs.filter((l) => l.category === 'diaper').length;
-    return { milk, sleep, diaper };
+    return { milk, fCount, sCount, sMins, diaper };
   };
 
   const getDateLabel = (key) => {
@@ -188,28 +226,46 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* Today's Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
-        <div className="glass-panel" style={{ padding: '0.75rem', textAlign: 'center' }}>
-          <div style={{ color: 'var(--feeding-color)', marginBottom: '0.2rem' }}>
+        {/* Feeding Card */}
+        <div className="glass-panel" style={{ padding: '0.75rem 0.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: 'var(--feeding-color)', marginBottom: '0.25rem' }}>
             <Milk size={20} style={{ margin: '0 auto' }} />
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{totalMilkMl} <span style={{ fontSize: '0.75rem' }}>ml</span></div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.totalMilk}</div>
+          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1.2 }}>
+            {totalMilkMl} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>ml</span>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#f472b6', fontWeight: 700, marginTop: '0.15rem' }}>
+            {feedingCount} <span style={{ fontSize: '0.7rem', fontWeight: 500 }}>{isZh ? '次' : (feedingCount === 1 ? 'feed' : 'feeds')}</span>
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.totalMilk}</div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.75rem', textAlign: 'center' }}>
-          <div style={{ color: 'var(--sleep-color)', marginBottom: '0.2rem' }}>
+        {/* Sleep Card */}
+        <div className="glass-panel" style={{ padding: '0.75rem 0.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: 'var(--sleep-color)', marginBottom: '0.25rem' }}>
             <Moon size={20} style={{ margin: '0 auto' }} />
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{sleepCount} <span style={{ fontSize: '0.75rem' }}>{t.times}</span></div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.totalSleep}</div>
+          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1.2 }}>
+            {formatTotalSleepDisplay(totalSleepMinutes, isZh)}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#a78bfa', fontWeight: 700, marginTop: '0.15rem' }}>
+            {sleepCount} <span style={{ fontSize: '0.7rem', fontWeight: 500 }}>{isZh ? '次' : (sleepCount === 1 ? 'time' : 'times')}</span>
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.totalSleep}</div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '0.75rem', textAlign: 'center' }}>
-          <div style={{ color: 'var(--diaper-color)', marginBottom: '0.2rem' }}>
+        {/* Diaper Card */}
+        <div className="glass-panel" style={{ padding: '0.75rem 0.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ color: 'var(--diaper-color)', marginBottom: '0.25rem' }}>
             <Baby size={20} style={{ margin: '0 auto' }} />
           </div>
-          <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{diaperCount} <span style={{ fontSize: '0.75rem' }}>{t.times}</span></div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{t.totalDiaper}</div>
+          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1.2 }}>
+            {diaperCount} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{isZh ? '次' : (diaperCount === 1 ? 'time' : 'times')}</span>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#22d3ee', fontWeight: 700, marginTop: '0.15rem' }}>
+            {isZh ? '尿布更换' : 'changes'}
+          </div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.totalDiaper}</div>
         </div>
       </div>
 
@@ -267,17 +323,17 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                   <div style={{ display: 'flex', gap: '0.4rem', fontSize: '0.75rem' }}>
                     {summary.milk > 0 && (
                       <span style={{ color: 'var(--feeding-color)', fontWeight: 600, background: 'rgba(236,72,153,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
-                        🥛 {summary.milk}ml
+                        🥛 {summary.milk}ml ({summary.fCount}{isZh ? '次' : 'x'})
                       </span>
                     )}
-                    {summary.sleep > 0 && (
+                    {(summary.sMins > 0 || summary.sCount > 0) && (
                       <span style={{ color: 'var(--sleep-color)', fontWeight: 600, background: 'rgba(139,92,246,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
-                        😴 {summary.sleep}
+                        😴 {formatTotalSleepDisplay(summary.sMins, isZh)} ({summary.sCount}{isZh ? '次' : 'x'})
                       </span>
                     )}
                     {summary.diaper > 0 && (
                       <span style={{ color: 'var(--diaper-color)', fontWeight: 600, background: 'rgba(6,182,212,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
-                        👶 {summary.diaper}
+                        👶 {summary.diaper}{isZh ? '次' : 'x'}
                       </span>
                     )}
                   </div>
