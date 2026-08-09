@@ -132,6 +132,23 @@ export async function initDb() {
             uploaded_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS feeding_timers (
+            id VARCHAR(64) PRIMARY KEY,
+            status VARCHAR(20) NOT NULL DEFAULT 'idle',
+            start_time TIMESTAMPTZ,
+            end_time TIMESTAMPTZ,
+            expires_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS opened_formula_bottles (
+            id VARCHAR(64) PRIMARY KEY,
+            bottle_type VARCHAR(20) NOT NULL,
+            opened_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_action_logs_start_time ON action_logs(start_time DESC);
         CREATE INDEX IF NOT EXISTS idx_action_logs_category ON action_logs(category, sub_category);
         CREATE INDEX IF NOT EXISTS idx_action_attachments_action_id ON action_attachments(action_id);
@@ -573,4 +590,130 @@ export async function deleteDbLogEntry(id) {
   }
 }
 
+/**
+ * Get current timers state from PostgreSQL DB
+ */
+export async function getDbTimersState() {
+  const now = new Date();
+
+  // 1. Feeding Session state
+  const sessionRes = await queryDb("SELECT id, status, start_time AS \"startTime\", end_time AS \"endTime\", expires_at AS \"expiresAt\" FROM feeding_timers WHERE id = 'active_session'");
+  let feedingSession = sessionRes.rows[0] || { id: 'active_session', status: 'idle', startTime: null, endTime: null, expiresAt: null };
+
+  // Check if session in 'active' state has expired (>1hr)
+  if (feedingSession.status === 'active' && feedingSession.expiresAt) {
+    const expiresAtDate = new Date(feedingSession.expiresAt);
+    if (now >= expiresAtDate) {
+      // Transition automatically to 'ended' with reason 'expired'
+      const updateRes = await queryDb(
+        `UPDATE feeding_timers 
+         SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
+         WHERE id = 'active_session' 
+         RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+        [feedingSession.expiresAt]
+      );
+      feedingSession = updateRes.rows[0];
+      feedingSession.reason = 'expired';
+    }
+  }
+
+  // 2. Opened RTF Bottles
+  const bottlesRes = await queryDb(
+    `SELECT id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"
+     FROM opened_formula_bottles
+     ORDER BY created_at DESC`
+  );
+
+  return {
+    feedingSession,
+    openedBottles: bottlesRes.rows || [],
+  };
+}
+
+/**
+ * Start a 1-hour feeding session in PostgreSQL DB
+ */
+export async function startDbFeedingSession() {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+
+  const res = await queryDb(
+    `INSERT INTO feeding_timers (id, status, start_time, end_time, expires_at, updated_at)
+     VALUES ('active_session', 'active', $1, NULL, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (id) DO UPDATE 
+     SET status = 'active', start_time = $1, end_time = NULL, expires_at = $2, updated_at = CURRENT_TIMESTAMP
+     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+    [now.toISOString(), expiresAt.toISOString()]
+  );
+
+  return res.rows[0];
+}
+
+/**
+ * Stop an active feeding session in PostgreSQL DB
+ */
+export async function stopDbFeedingSession() {
+  const now = new Date();
+
+  const res = await queryDb(
+    `UPDATE feeding_timers 
+     SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
+     WHERE id = 'active_session' 
+     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+    [now.toISOString()]
+  );
+
+  return res.rows[0] || { id: 'active_session', status: 'ended', startTime: now.toISOString(), endTime: now.toISOString() };
+}
+
+/**
+ * Reset feeding session to IDLE in PostgreSQL DB
+ */
+export async function resetDbFeedingSession() {
+  const res = await queryDb(
+    `INSERT INTO feeding_timers (id, status, start_time, end_time, expires_at, updated_at)
+     VALUES ('active_session', 'idle', NULL, NULL, NULL, CURRENT_TIMESTAMP)
+     ON CONFLICT (id) DO UPDATE 
+     SET status = 'idle', start_time = NULL, end_time = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`
+  );
+
+  return res.rows[0];
+}
+
+/**
+ * Open a Ready-To-Feed formula bottle in PostgreSQL DB
+ */
+export async function openDbFormulaBottle(bottleType) {
+  // Check count of active opened bottles (max 5)
+  const countRes = await queryDb('SELECT COUNT(*) FROM opened_formula_bottles');
+  const count = parseInt(countRes.rows[0].count, 10);
+  if (count >= 5) {
+    throw new Error('Maximum limit of 5 opened bottles reached.');
+  }
+
+  const now = new Date();
+  const hoursToAdd = bottleType === '237ml' ? 48 : 24;
+  const expiresAt = new Date(now.getTime() + hoursToAdd * 60 * 60 * 1000);
+  const id = 'rtf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+  const res = await queryDb(
+    `INSERT INTO opened_formula_bottles (id, bottle_type, opened_at, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+     RETURNING id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"`,
+    [id, bottleType, now.toISOString(), expiresAt.toISOString()]
+  );
+
+  return res.rows[0];
+}
+
+/**
+ * Finish/discard an opened Ready-To-Feed bottle in PostgreSQL DB
+ */
+export async function finishDbFormulaBottle(id) {
+  await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1', [id]);
+  return true;
+}
+
 export default pool;
+

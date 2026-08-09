@@ -6,8 +6,15 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWithGemini } from './geminiService.js';
-import { getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry } from './localJsonService.js';
-import { initDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry } from './db.js';
+import { 
+  getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry,
+  getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle 
+} from './localJsonService.js';
+import { 
+  initDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry,
+  getDbTimersState, startDbFeedingSession, stopDbFeedingSession, resetDbFeedingSession, openDbFormulaBottle, finishDbFormulaBottle 
+} from './db.js';
+
 
 dotenv.config();
 
@@ -348,6 +355,116 @@ app.delete('/api/logs/:id', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
+// ==========================================
+// TIMER & EXPIRY ENDPOINTS
+// ==========================================
+
+// GET all timers (feeding session & RTF bottles)
+app.get('/api/timers', async (req, res) => {
+  try {
+    try {
+      const state = await getDbTimersState();
+      return res.json({ success: true, ...state, source: 'postgres' });
+    } catch (dbErr) {
+      console.warn('PostgreSQL get timers fallback to local storage:', dbErr.message);
+      const state = await getFallbackTimers();
+      return res.json({ success: true, ...state, source: 'json_fallback' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST start feeding session (1 hour timer)
+app.post('/api/timers/feeding/start', async (req, res) => {
+  try {
+    try {
+      const session = await startDbFeedingSession();
+      return res.json({ success: true, session, source: 'postgres' });
+    } catch (dbErr) {
+      console.warn('PostgreSQL start feeding timer fallback to local storage:', dbErr.message);
+      const session = await startFallbackFeedingSession();
+      return res.json({ success: true, session, source: 'json_fallback' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST stop feeding session (sets state to 'ended')
+app.post('/api/timers/feeding/stop', async (req, res) => {
+  try {
+    try {
+      const session = await stopDbFeedingSession();
+      return res.json({ success: true, session, source: 'postgres' });
+    } catch (dbErr) {
+      console.warn('PostgreSQL stop feeding timer fallback to local storage:', dbErr.message);
+      const session = await stopFallbackFeedingSession();
+      return res.json({ success: true, session, source: 'json_fallback' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST reset feeding session to idle
+app.post('/api/timers/feeding/reset', async (req, res) => {
+  try {
+    try {
+      const session = await resetDbFeedingSession();
+      return res.json({ success: true, session, source: 'postgres' });
+    } catch (dbErr) {
+      console.warn('PostgreSQL reset feeding timer fallback to local storage:', dbErr.message);
+      const session = await resetFallbackFeedingSession();
+      return res.json({ success: true, session, source: 'json_fallback' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST open a Ready-To-Feed bottle ('237ml' or '59ml')
+app.post('/api/timers/bottles/open', async (req, res) => {
+  try {
+    const { bottleType } = req.body;
+    if (!bottleType || !['237ml', '59ml'].includes(bottleType)) {
+      return res.status(400).json({ success: false, error: 'Invalid bottleType. Must be 237ml or 59ml' });
+    }
+
+    try {
+      const newBottle = await openDbFormulaBottle(bottleType);
+      return res.json({ success: true, bottle: newBottle, source: 'postgres' });
+    } catch (dbErr) {
+      if (dbErr.message.includes('Maximum limit')) {
+        return res.status(400).json({ success: false, error: dbErr.message });
+      }
+      console.warn('PostgreSQL open RTF bottle fallback to local storage:', dbErr.message);
+      const newBottle = await openFallbackFormulaBottle(bottleType);
+      return res.json({ success: true, bottle: newBottle, source: 'json_fallback' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE finish/discard an opened RTF bottle
+app.delete('/api/timers/bottles/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    try {
+      await finishDbFormulaBottle(id);
+    } catch (dbErr) {
+      console.warn('PostgreSQL finish RTF bottle fallback to local storage:', dbErr.message);
+      await finishFallbackFormulaBottle(id);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 // Serve static frontend assets in production mode
 const distPath = path.join(__dirname, '../dist');

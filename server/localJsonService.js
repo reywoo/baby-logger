@@ -102,3 +102,123 @@ export function updateFallbackLogEntry(id, logData) {
   fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify(logs, null, 2));
   return logs[index];
 }
+
+const LOCAL_TIMERS_FILE = path.join(DATA_DIR, 'timers.json');
+
+const defaultTimersState = {
+  feedingSession: { id: 'active_session', status: 'idle', startTime: null, endTime: null, expiresAt: null },
+  openedBottles: [],
+};
+
+function getLocalTimers() {
+  try {
+    if (!fs.existsSync(LOCAL_TIMERS_FILE)) {
+      fs.writeFileSync(LOCAL_TIMERS_FILE, JSON.stringify(defaultTimersState, null, 2));
+      return defaultTimersState;
+    }
+    const data = fs.readFileSync(LOCAL_TIMERS_FILE, 'utf8');
+    return JSON.parse(data || JSON.stringify(defaultTimersState));
+  } catch (err) {
+    console.error('Error reading local timers:', err);
+    return defaultTimersState;
+  }
+}
+
+function saveLocalTimers(state) {
+  fs.writeFileSync(LOCAL_TIMERS_FILE, JSON.stringify(state, null, 2));
+}
+
+export async function getFallbackTimers() {
+  const state = getLocalTimers();
+  const now = new Date();
+
+  // Check if feeding session is active but expired
+  if (state.feedingSession && state.feedingSession.status === 'active' && state.feedingSession.expiresAt) {
+    if (now >= new Date(state.feedingSession.expiresAt)) {
+      state.feedingSession.status = 'ended';
+      state.feedingSession.endTime = state.feedingSession.expiresAt;
+      state.feedingSession.reason = 'expired';
+      saveLocalTimers(state);
+    }
+  }
+
+  return state;
+}
+
+export async function startFallbackFeedingSession() {
+  const state = getLocalTimers();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+
+  state.feedingSession = {
+    id: 'active_session',
+    status: 'active',
+    startTime: now.toISOString(),
+    endTime: null,
+    expiresAt: expiresAt.toISOString(),
+  };
+
+  saveLocalTimers(state);
+  return state.feedingSession;
+}
+
+export async function stopFallbackFeedingSession() {
+  const state = getLocalTimers();
+  const now = new Date();
+
+  state.feedingSession = {
+    ...state.feedingSession,
+    status: 'ended',
+    endTime: now.toISOString(),
+  };
+
+  saveLocalTimers(state);
+  return state.feedingSession;
+}
+
+export async function resetFallbackFeedingSession() {
+  const state = getLocalTimers();
+
+  state.feedingSession = {
+    id: 'active_session',
+    status: 'idle',
+    startTime: null,
+    endTime: null,
+    expiresAt: null,
+  };
+
+  saveLocalTimers(state);
+  return state.feedingSession;
+}
+
+export async function openFallbackFormulaBottle(bottleType) {
+  const state = getLocalTimers();
+  if (state.openedBottles.length >= 5) {
+    throw new Error('Maximum limit of 5 opened bottles reached.');
+  }
+
+  const now = new Date();
+  const hoursToAdd = bottleType === '237ml' ? 48 : 24;
+  const expiresAt = new Date(now.getTime() + hoursToAdd * 60 * 60 * 1000);
+  const id = 'rtf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+
+  const newBottle = {
+    id,
+    bottleType,
+    openedAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    createdAt: now.toISOString(),
+  };
+
+  state.openedBottles.unshift(newBottle);
+  saveLocalTimers(state);
+  return newBottle;
+}
+
+export async function finishFallbackFormulaBottle(id) {
+  const state = getLocalTimers();
+  state.openedBottles = state.openedBottles.filter(b => b.id !== id);
+  saveLocalTimers(state);
+  return true;
+}
+

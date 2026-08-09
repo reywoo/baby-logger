@@ -47,3 +47,21 @@ CREATE TRIGGER update_action_logs_modtime
 BEFORE UPDATE ON action_logs
 FOR EACH ROW
 EXECUTE FUNCTION update_timestamp_column();
+
+CREATE TABLE IF NOT EXISTS feeding_timers (
+    id VARCHAR(64) PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS opened_formula_bottles (
+    id VARCHAR(64) PRIMARY KEY,
+    bottle_type VARCHAR(20) NOT NULL,
+    opened_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+

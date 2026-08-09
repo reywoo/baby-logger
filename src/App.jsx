@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2 } from 'lucide-react';
+import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer } from 'lucide-react';
 import LanguageToggle from './components/LanguageToggle';
 import AudioRecorder from './components/AudioRecorder';
 import QuickLogButtons from './components/QuickLogButtons';
@@ -7,6 +7,7 @@ import LogPreviewModal from './components/LogPreviewModal';
 import TimelineFeed from './components/TimelineFeed';
 import DataExport from './components/DataExport';
 import PasscodeLock from './components/PasscodeLock';
+import FeedingTimers from './components/FeedingTimers';
 
 const translations = {
   zh: {
@@ -14,7 +15,9 @@ const translations = {
     appSubtitle: '语音智能识别 • 中英双语记录 • 自动解析',
     navVoice: '语音记录',
     navTimeline: '日志动态',
+    navTimer: '喂养计时',
     navExport: '数据导出',
+
     voiceTitle: '长按或点击说话',
     voiceSubtitle: '父母可用中文口述（例如：“宝宝下午2点喝了150毫升牛奶”）',
     startRecord: '开始录音',
@@ -48,6 +51,7 @@ const translations = {
     appSubtitle: 'Voice AI Powered • Multilingual • Auto-Structured',
     navVoice: 'Voice Log',
     navTimeline: 'Log History',
+    navTimer: 'Timers',
     navExport: 'Export Data',
     voiceTitle: 'Tap or Hold to Speak',
     voiceSubtitle: 'Speak in Chinese or English (e.g., "Baby drank 150ml milk at 2pm")',
@@ -404,6 +408,14 @@ export default function App() {
         )}
 
 
+        {activeTab === 'timer' && (
+          <FeedingTimers
+            onOpenFeedingModal={(feedingData) => setPreviewData(feedingData)}
+            getAuthHeaders={getAuthHeaders}
+            lang={lang}
+          />
+        )}
+
         {activeTab === 'export' && (
           <DataExport
             logs={logs}
@@ -443,6 +455,14 @@ export default function App() {
         </button>
 
         <button
+          className={`nav-item ${activeTab === 'timer' ? 'active' : ''}`}
+          onClick={() => setActiveTab('timer')}
+        >
+          <Timer size={20} />
+          <span>{t.navTimer}</span>
+        </button>
+
+        <button
           className={`nav-item ${activeTab === 'export' ? 'active' : ''}`}
           onClick={() => setActiveTab('export')}
         >
@@ -450,6 +470,7 @@ export default function App() {
           <span>{t.navExport}</span>
         </button>
       </nav>
+
 
     </div>
   );
