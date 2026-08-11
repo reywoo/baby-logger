@@ -24,7 +24,7 @@ const translations = {
     navExport: '数据导出',
 
     voiceTitle: '长按或点击说话',
-    voiceSubtitle: '父母可用中文口述（例如：“宝宝下午2点喝了150毫升牛奶”）',
+    voiceSubtitle: '单次仅生成 1 条单项记录（例如：“宝宝下午2点喝了150ml牛奶”）。多项活动请分开录入。',
     startRecord: '开始录音',
     stopRecord: '停止录音',
     recording: '正在录音',
@@ -60,7 +60,7 @@ const translations = {
     navTips: 'Newborn Tips',
     navExport: 'Export Data',
     voiceTitle: 'Tap or Hold to Speak',
-    voiceSubtitle: 'Speak in Chinese or English (e.g., "Baby drank 150ml milk at 2pm")',
+    voiceSubtitle: 'Each voice or text input creates 1 single log entry. Please log multiple events separately.',
     startRecord: 'Start Recording',
     stopRecord: 'Stop Recording',
     recording: 'Recording',

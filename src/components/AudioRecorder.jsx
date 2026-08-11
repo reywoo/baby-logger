@@ -185,9 +185,25 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
         <Sparkles size={20} style={{ color: 'var(--primary-accent)' }} />
         {t.voiceTitle}
       </h2>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '0.75rem', lineHeight: 1.4 }}>
         {t.voiceSubtitle}
       </p>
+
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.4rem',
+        padding: '0.35rem 0.8rem',
+        borderRadius: '1rem',
+        background: 'rgba(236, 72, 153, 0.12)',
+        border: '1px solid rgba(236, 72, 153, 0.3)',
+        color: '#f472b6',
+        fontSize: '0.78rem',
+        fontWeight: 600,
+        marginBottom: '1.25rem'
+      }}>
+        <span>💡 {lang === 'zh' ? '注意：单次语音/打字只生成 1 条单项记录' : 'Note: 1 single log entry created per recording'}</span>
+      </div>
 
       {/* Mic Button & Wave Animation */}
       <div className="mic-button-container">

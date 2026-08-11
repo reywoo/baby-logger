@@ -89,6 +89,7 @@ Listen carefully to the audio clip provided. The speaker may be using Chinese (M
 
 Extract and structure the activity log into a clean JSON object.
 Follow these guidelines strictly:
+0. CRITICAL SINGLE EVENT RULE: Each audio recording MUST produce exactly ONE single log entry. If the speaker mentions multiple actions, events, or categories in one recording (for example: "changed diaper and baby drank 120ml milk and went to sleep"), ONLY extract and parse the FIRST clearly identifiable action and ignore all subsequent actions. Do NOT attempt to output multiple records or combine multiple events.
 1. Identify the category: ${categoriesList}.
 ${!hasBirthDate ? '   - CRITICAL: Baby birth date is NOT set. You MUST NOT categorize any input into "growth". Use "other" or appropriate category instead.\n' : ''}2. Identify subCategory ONLY from these fixed allowed subcategories for each category:
 ${subCatRules}
@@ -162,6 +163,7 @@ export async function processTextWithGemini(textInput, userApiKey, subCategories
 Parse this user log entry: "${textInput}". The text may be in Chinese, English, or mixed.
 
 Extract timing & category details:
+- CRITICAL SINGLE EVENT RULE: Each input text MUST produce exactly ONE single log entry. If the user text mentions multiple actions or events (e.g. "changed diaper and baby drank 120ml milk"), ONLY extract and parse the FIRST clearly identifiable action and ignore all subsequent actions. Do NOT attempt to output multiple records or combine multiple events.
 - "category": ${categoriesList}
 ${!hasBirthDate ? '- CRITICAL: Baby birth date is NOT set. You MUST NOT categorize into "growth". Use "other" or another suitable category.\n' : ''}- "subCategory": MUST be chosen from one of these fixed allowed subcategories for each category:
 ${subCatRules}
