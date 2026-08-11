@@ -263,10 +263,12 @@ app.get('/api/logs/export', async (req, res) => {
       const csvRows = [headers.join(',')];
 
       for (const log of logs) {
+        const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString() : '');
+        const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
         const row = [
           escapeCsv(log.id),
-          escapeCsv(log.displayDate || ''),
-          escapeCsv(log.displayTime || ''),
+          escapeCsv(dDate),
+          escapeCsv(dTime),
           escapeCsv(log.category || ''),
           escapeCsv(log.subCategory || ''),
           escapeCsv(log.amount || ''),

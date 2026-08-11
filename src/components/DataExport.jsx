@@ -139,10 +139,12 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
     const csvRows = [headers.join(',')];
 
     for (const log of items) {
+      const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString() : '');
+      const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
       const row = [
         escapeCsv(log.id),
-        escapeCsv(log.displayDate || ''),
-        escapeCsv(log.displayTime || ''),
+        escapeCsv(dDate),
+        escapeCsv(dTime),
         escapeCsv(log.category || ''),
         escapeCsv(log.subCategory || ''),
         escapeCsv(log.amount || ''),
@@ -265,6 +267,7 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
             <option value="feeding">🍼 {isZh ? '喂养 (Feeding)' : 'Feeding'}</option>
             <option value="sleep">💤 {isZh ? '睡眠 (Sleep)' : 'Sleep'}</option>
             <option value="diaper">🧷 {isZh ? '换尿布 (Diaper)' : 'Diaper'}</option>
+            <option value="growth">📏 {isZh ? '生长发育 (Growth)' : 'Growth'}</option>
             <option value="health">💊 {isZh ? '健康/用药 (Health)' : 'Health'}</option>
             <option value="activity">🎈 {isZh ? '日常/游戏 (Activity)' : 'Activity'}</option>
             <option value="other">📝 {isZh ? '其他 (Other)' : 'Other'}</option>
