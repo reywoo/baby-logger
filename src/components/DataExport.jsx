@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Download, FileSpreadsheet, FileJson, Calendar, Filter, Check, Clock } from 'lucide-react';
+import AnalyticsCharts from './AnalyticsCharts';
 
 function toDatetimeLocal(d) {
   if (!d || isNaN(d.getTime())) return '';
@@ -173,7 +174,10 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      {/* Header Card */}
+      {/* 1. Analytics & Trends Chart Section */}
+      <AnalyticsCharts logs={logs} lang={lang} />
+
+      {/* 2. Export Header Card */}
       <div className="glass-panel" style={{ padding: '1.25rem' }}>
         <h2 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Download size={22} style={{ color: 'var(--primary-accent)' }} />
