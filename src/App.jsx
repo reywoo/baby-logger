@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer, BookOpen } from 'lucide-react';
+import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer, BookOpen, Cake, Calendar, Pencil } from 'lucide-react';
 import LanguageToggle from './components/LanguageToggle';
 import AudioRecorder from './components/AudioRecorder';
 import QuickLogButtons from './components/QuickLogButtons';
@@ -9,12 +9,15 @@ import DataExport from './components/DataExport';
 import PasscodeLock from './components/PasscodeLock';
 import FeedingTimers from './components/FeedingTimers';
 import NewbornTips from './components/NewbornTips';
+import BabyBirthdayModal from './components/BabyBirthdayModal';
+import ReywooLogo from './components/ReywooLogo';
+import { calculateBabyAge } from './utils/ageUtils';
 
 const translations = {
   zh: {
     appTitle: '家庭生活与育儿日志',
     appSubtitle: '语音智能识别 • 中英双语记录 • 自动解析',
-    navVoice: '语音记录',
+    navVoice: '智能记录',
     navTimeline: '日志动态',
     navTimer: '喂养计时',
     navTips: '育儿指南',
@@ -51,7 +54,7 @@ const translations = {
   en: {
     appTitle: 'Family Assistant Log',
     appSubtitle: 'Voice AI Powered • Multilingual • Auto-Structured',
-    navVoice: 'Voice Log',
+    navVoice: 'Smart Log',
     navTimeline: 'Log History',
     navTimer: 'Timers',
     navTips: 'Newborn Tips',
@@ -102,6 +105,10 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [authError, setAuthError] = useState('');
+
+  // Baby Profile & Birthday State
+  const [babyProfile, setBabyProfile] = useState(null);
+  const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
 
   const t = translations[lang];
 
@@ -154,11 +161,40 @@ export default function App() {
       const isValid = await verifyPasscode();
       if (isValid) {
         fetchLogs();
+        fetchBabyProfile();
       }
     };
 
     initAuth();
   }, []);
+
+  const fetchBabyProfile = async () => {
+    try {
+      const res = await fetch('/api/baby-profile', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setBabyProfile(data.profile || null);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch baby profile:', err);
+    }
+  };
+
+  const handleSaveBabyProfile = async (birthDate, name) => {
+    const res = await fetch('/api/baby-profile', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ birthDate, name }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setBabyProfile(data.profile || null);
+    } else {
+      throw new Error(data.error || 'Failed to save birthday');
+    }
+  };
 
   const fetchLogs = async () => {
     try {
@@ -329,16 +365,73 @@ export default function App() {
 
   return (
     <div>
-      {/* Top App Bar Header */}
-      <header className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0.9rem 1.2rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+      {/* 1. Top Brand Header Banner (Mobile Optimized) */}
+      <header className="glass-panel" style={{ display: 'flex', alignItems: 'center', marginBottom: '0.55rem', padding: '0.65rem 0.85rem', gap: '0.5rem' }}>
+        <ReywooLogo size={36} showText={true} />
+        <div style={{ height: '22px', width: '1px', background: 'rgba(255, 255, 255, 0.15)', flexShrink: 0, margin: '0 0.05rem' }} />
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <h1 style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             🍼 {t.appTitle}
           </h1>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.appSubtitle}</p>
+          <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {t.appSubtitle}
+          </p>
         </div>
-        <LanguageToggle lang={lang} setLang={setLang} />
       </header>
+
+      {/* 2. Preferences & Controls Bar */}
+      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0.55rem 1rem', background: 'rgba(15, 23, 42, 0.55)', borderColor: 'rgba(255, 255, 255, 0.12)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          {babyProfile?.birthDate ? (
+            <button
+              onClick={() => setIsBirthdayModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '20px',
+                background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.18), rgba(139, 92, 246, 0.18))',
+                border: '1px solid rgba(236, 72, 153, 0.4)',
+                color: 'var(--text-main)',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title={lang === 'zh' ? '点击修改生日' : 'Click to edit birthday'}
+            >
+              <Cake size={16} style={{ color: '#ec4899' }} />
+              <span>{calculateBabyAge(babyProfile.birthDate, lang)}</span>
+              <Pencil size={13} style={{ color: 'var(--text-muted)', marginLeft: '0.15rem' }} />
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsBirthdayModalOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '20px',
+                background: 'linear-gradient(135deg, #ec4899, #8b5cf6)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(236, 72, 153, 0.3)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <Cake size={16} />
+              <span>{lang === 'zh' ? '🎂 设置生日' : '🎂 Set Birthday'}</span>
+            </button>
+          )}
+        </div>
+
+        <LanguageToggle lang={lang} setLang={setLang} />
+      </div>
 
       {/* Main Tab Content */}
       <main>
@@ -396,7 +489,13 @@ export default function App() {
             )}
 
             {/* Quick One-Tap Action Buttons */}
-            <QuickLogButtons onSelectQuick={handleQuickSelect} lang={lang} t={t} />
+            <QuickLogButtons
+              onSelectQuick={handleQuickSelect}
+              lang={lang}
+              t={t}
+              birthDate={babyProfile?.birthDate}
+              onOpenBirthdayModal={() => setIsBirthdayModalOpen(true)}
+            />
           </div>
         )}
 
@@ -440,6 +539,17 @@ export default function App() {
           onClose={() => setPreviewData(null)}
           lang={lang}
           t={t}
+          birthDate={babyProfile?.birthDate}
+        />
+      )}
+
+      {/* Baby Birthday Modal */}
+      {isBirthdayModalOpen && (
+        <BabyBirthdayModal
+          currentBirthDate={babyProfile?.birthDate}
+          onSave={handleSaveBabyProfile}
+          onClose={() => setIsBirthdayModalOpen(false)}
+          lang={lang}
         />
       )}
 
@@ -449,7 +559,7 @@ export default function App() {
           className={`nav-item ${activeTab === 'voice' ? 'active' : ''}`}
           onClick={() => setActiveTab('voice')}
         >
-          <Mic size={20} />
+          <Sparkles size={20} />
           <span>{t.navVoice}</span>
         </button>
 

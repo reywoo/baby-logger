@@ -8,11 +8,13 @@ import dotenv from 'dotenv';
 import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWithGemini } from './geminiService.js';
 import { 
   getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry,
-  getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle 
+  getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle,
+  getFallbackBabyProfile, saveFallbackBabyProfile
 } from './localJsonService.js';
 import { 
   initDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry,
-  getDbTimersState, startDbFeedingSession, stopDbFeedingSession, resetDbFeedingSession, openDbFormulaBottle, finishDbFormulaBottle 
+  getDbTimersState, startDbFeedingSession, stopDbFeedingSession, resetDbFeedingSession, openDbFormulaBottle, finishDbFormulaBottle,
+  getDbBabyProfile, saveDbBabyProfile
 } from './db.js';
 
 
@@ -91,6 +93,52 @@ app.get('/api/subcategories', async (req, res) => {
   }
 });
 
+// Baby Profile Endpoints
+app.get('/api/baby-profile', async (req, res) => {
+  try {
+    let profile = null;
+    try {
+      profile = await getDbBabyProfile();
+    } catch (err) {
+      console.warn('DB getBabyProfile failed, using JSON fallback:', err.message);
+      profile = await getFallbackBabyProfile();
+    }
+    if (!profile) {
+      profile = await getFallbackBabyProfile();
+    }
+    res.json({ success: true, profile });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/baby-profile', async (req, res) => {
+  try {
+    const { birthDate, name } = req.body;
+    let profile = null;
+    try {
+      profile = await saveDbBabyProfile(birthDate, name || 'Baby');
+    } catch (err) {
+      console.warn('DB saveBabyProfile failed, saving to JSON fallback:', err.message);
+      profile = await saveFallbackBabyProfile(birthDate, name || 'Baby');
+    }
+    res.json({ success: true, profile });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+async function checkHasBirthDate() {
+  try {
+    let p = await getDbBabyProfile();
+    if (!p) p = await getFallbackBabyProfile();
+    return !!(p && p.birthDate);
+  } catch (e) {
+    const p = await getFallbackBabyProfile();
+    return !!(p && p.birthDate);
+  }
+}
+
 // 1. Process Raw Audio with Gemini
 app.post('/api/process-audio', uploadAudio.single('audio'), async (req, res) => {
   try {
@@ -103,8 +151,9 @@ app.post('/api/process-audio', uploadAudio.single('audio'), async (req, res) => 
     
     console.log(`Processing audio snippet (${req.file.size} bytes, ${mimeType})...`);
 
+    const hasBirthDate = await checkHasBirthDate();
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap);
+    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap, hasBirthDate);
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-audio error:', error);
@@ -120,9 +169,9 @@ app.post('/api/process-text', async (req, res) => {
       return res.status(400).json({ error: 'Text input is required' });
     }
 
-    const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+    const hasBirthDate = await checkHasBirthDate();
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap);
+    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap, hasBirthDate);
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-text error:', error);
@@ -377,15 +426,16 @@ app.get('/api/timers', async (req, res) => {
   }
 });
 
-// POST start feeding session (1 hour timer)
+// POST start feeding/sleeping session
 app.post('/api/timers/feeding/start', async (req, res) => {
   try {
+    const sessionType = req.body?.sessionType || 'feeding';
     try {
-      const session = await startDbFeedingSession();
+      const session = await startDbFeedingSession(sessionType);
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL start feeding timer fallback to local storage:', dbErr.message);
-      const session = await startFallbackFeedingSession();
+      const session = await startFallbackFeedingSession(sessionType);
       return res.json({ success: true, session, source: 'json_fallback' });
     }
   } catch (error) {

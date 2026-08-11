@@ -51,6 +51,7 @@ EXECUTE FUNCTION update_timestamp_column();
 CREATE TABLE IF NOT EXISTS feeding_timers (
     id VARCHAR(64) PRIMARY KEY,
     status VARCHAR(20) NOT NULL DEFAULT 'idle',
+    session_type VARCHAR(20) NOT NULL DEFAULT 'feeding',
     start_time TIMESTAMPTZ,
     end_time TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
@@ -63,5 +64,13 @@ CREATE TABLE IF NOT EXISTS opened_formula_bottles (
     opened_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS baby_profile (
+    id VARCHAR(64) PRIMARY KEY DEFAULT 'default_baby',
+    name VARCHAR(100) DEFAULT 'Baby',
+    birth_date DATE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

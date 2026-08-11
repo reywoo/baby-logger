@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, X, Milk, Moon, Baby, HeartPulse, Activity, FileText, Camera, AlertTriangle, Sparkles, Loader2 } from 'lucide-react';
+import { Check, X, Milk, Moon, Baby, HeartPulse, Activity, FileText, Camera, AlertTriangle, Sparkles, Loader2, Ruler } from 'lucide-react';
 import { playSuccessChime } from '../utils/audioChimes';
 import { calculateDurationBetween, calculateEndTimeFromDuration } from '../utils/timeUtils';
 
@@ -17,6 +17,10 @@ const PRESET_SUBCATEGORIES = {
     { id: 'wet', labelZh: '🟡 小便 (Pee)', labelEn: 'Pee (Wet)' },
     { id: 'dirty', labelZh: '💩 大便/拉屎 (Poop)', labelEn: 'Poop (Dirty)' },
     { id: 'both', labelZh: '🚽 尿+便 (Pee & Poop)', labelEn: 'Pee & Poop' },
+  ],
+  growth: [
+    { id: 'weight', labelZh: '⚖️ 体重 (Weight)', labelEn: 'Weight (kg)' },
+    { id: 'height', labelZh: '📏 身高 (Height)', labelEn: 'Height (cm)' },
   ],
   health: [
     { id: 'medicine', labelZh: '💊 吃药/喂药 (Medicine)', labelEn: 'Medicine' },
@@ -55,11 +59,11 @@ function extractNumberOnly(val) {
   return match ? match[1] : '';
 }
 
-export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
+export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthDate }) {
   const isEditing = !!data.id;
   const initialCat = data.category || 'feeding';
   const initialSubCat = data.subCategory || 'formula';
-  const initialIsStrictNumeric = initialCat === 'feeding' || (initialCat === 'health' && initialSubCat === 'temperature');
+  const initialIsStrictNumeric = initialCat === 'feeding' || (initialCat === 'health' && initialSubCat === 'temperature') || initialCat === 'growth';
   const initialAmount = initialIsStrictNumeric ? extractNumberOnly(data.amount) : (data.amount || '');
 
   const [category, setCategory] = useState(initialCat);
@@ -105,7 +109,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
   const [isValidating, setIsValidating] = useState(false);
   const [sanityWarning, setSanityWarning] = useState(null);
 
-  const isStrictNumeric = category === 'feeding' || (category === 'health' && subCategory === 'temperature');
+  const isStrictNumeric = category === 'feeding' || (category === 'health' && subCategory === 'temperature') || category === 'growth';
   const hasInvalidChars = isStrictNumeric && amount.trim() !== '' && /[^\d\.]/.test(amount.trim());
 
   const getCategoryIcon = (cat) => {
@@ -113,6 +117,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
       case 'feeding': return <Milk size={18} />;
       case 'sleep': return <Moon size={18} />;
       case 'diaper': return <Baby size={18} />;
+      case 'growth': return <Ruler size={18} />;
       case 'health': return <HeartPulse size={18} />;
       case 'activity': return <Activity size={18} />;
       default: return <FileText size={18} />;
@@ -169,7 +174,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
     setRemovedAttachmentIds((prev) => [...prev, attId]);
   };
 
-  const isInstantCategory = category === 'diaper' || category === 'health';
+  const isInstantCategory = category === 'diaper' || category === 'health' || category === 'growth';
 
   const handleConfirmSave = async (overrideEntry = null) => {
     setIsSubmitting(true);
@@ -193,7 +198,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
           endIso = startIso;
         }
 
-        const hasAmount = category === 'feeding' || category === 'health';
+        const hasAmount = category === 'feeding' || category === 'health' || category === 'growth';
         let finalAmount = hasAmount ? amount.trim() : '';
 
         if (category === 'feeding' && finalAmount) {
@@ -202,6 +207,10 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
         } else if (category === 'health' && subCategory === 'temperature' && finalAmount) {
           const num = extractNumberOnly(finalAmount) || finalAmount;
           finalAmount = `${num} °C`;
+        } else if (category === 'growth' && finalAmount) {
+          const num = extractNumberOnly(finalAmount) || finalAmount;
+          const unit = subCategory === 'height' ? 'cm' : 'kg';
+          finalAmount = `${num} ${unit}`;
         }
 
         const finalDuration = isInstantCategory ? '' : duration;
@@ -348,6 +357,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
               <option value="feeding">🍼 {lang === 'zh' ? '喂养 (Feeding)' : 'Feeding'}</option>
               <option value="sleep">💤 {lang === 'zh' ? '睡眠 (Sleep)' : 'Sleep'}</option>
               <option value="diaper">🧷 {lang === 'zh' ? '换尿布 (Diaper)' : 'Diaper'}</option>
+              <option value="growth" disabled={!birthDate}>📏 {lang === 'zh' ? '生长发育 (Growth)' : 'Growth'}{!birthDate ? (lang === 'zh' ? ' (需先设置生日)' : ' (Set Birthday First)') : ''}</option>
               <option value="health">💊 {lang === 'zh' ? '健康/用药 (Health)' : 'Health'}</option>
               <option value="activity">🎈 {lang === 'zh' ? '日常/游戏 (Activity)' : 'Activity'}</option>
               <option value="other">📝 {lang === 'zh' ? '其他 (Other)' : 'Other'}</option>
@@ -464,6 +474,34 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t }) {
                   style={{ background: 'rgba(255, 255, 255, 0.03)', cursor: 'not-allowed', opacity: 0.8 }}
                 />
               </div>
+            </div>
+          ) : category === 'growth' ? (
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
+                📏 {subCategory === 'height'
+                  ? (lang === 'zh' ? '身高数值 (纯数字，单位 cm)' : 'Height Value (Numeric only, in cm)')
+                  : (lang === 'zh' ? '体重数值 (纯数字，单位 kg)' : 'Weight Value (Numeric only, in kg)')}
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder={subCategory === 'height' ? "e.g. 60" : "e.g. 5.5"}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  style={{ flex: 1, borderColor: hasInvalidChars ? '#ef4444' : undefined }}
+                />
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.55rem 0.75rem', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '0.5rem', border: '1px solid var(--card-border)', color: 'var(--primary-accent)' }}>
+                  {subCategory === 'height' ? 'cm' : 'kg'}
+                </span>
+              </div>
+              {hasInvalidChars && (
+                <div style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.3rem', fontWeight: 600 }}>
+                  ⚠️ {subCategory === 'height'
+                    ? (lang === 'zh' ? '身高仅支持输入纯数字，单位固定为 cm（请勿输入字母/单位）' : 'Height must be numbers only. Unit is fixed to cm.')
+                    : (lang === 'zh' ? '体重仅支持输入纯数字，单位固定为 kg（请勿输入字母/单位）' : 'Weight must be numbers only. Unit is fixed to kg.')}
+                </div>
+              )}
             </div>
           ) : category === 'health' ? (
             <div>

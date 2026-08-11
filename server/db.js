@@ -135,11 +135,13 @@ export async function initDb() {
         CREATE TABLE IF NOT EXISTS feeding_timers (
             id VARCHAR(64) PRIMARY KEY,
             status VARCHAR(20) NOT NULL DEFAULT 'idle',
+            session_type VARCHAR(20) NOT NULL DEFAULT 'feeding',
             start_time TIMESTAMPTZ,
             end_time TIMESTAMPTZ,
             expires_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) NOT NULL DEFAULT 'feeding';
 
         CREATE TABLE IF NOT EXISTS opened_formula_bottles (
             id VARCHAR(64) PRIMARY KEY,
@@ -147,6 +149,14 @@ export async function initDb() {
             opened_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS baby_profile (
+            id VARCHAR(64) PRIMARY KEY DEFAULT 'default_baby',
+            name VARCHAR(100) DEFAULT 'Baby',
+            birth_date DATE NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_action_logs_start_time ON action_logs(start_time DESC);
@@ -596,9 +606,10 @@ export async function deleteDbLogEntry(id) {
 export async function getDbTimersState() {
   const now = new Date();
 
-  // 1. Feeding Session state
-  const sessionRes = await queryDb("SELECT id, status, start_time AS \"startTime\", end_time AS \"endTime\", expires_at AS \"expiresAt\" FROM feeding_timers WHERE id = 'active_session'");
-  let feedingSession = sessionRes.rows[0] || { id: 'active_session', status: 'idle', startTime: null, endTime: null, expiresAt: null };
+  // 1. Feeding / Sleeping Session state
+  const sessionRes = await queryDb("SELECT id, status, session_type AS \"sessionType\", start_time AS \"startTime\", end_time AS \"endTime\", expires_at AS \"expiresAt\" FROM feeding_timers WHERE id = 'active_session'");
+  let feedingSession = sessionRes.rows[0] || { id: 'active_session', status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
+  if (!feedingSession.sessionType) feedingSession.sessionType = 'feeding';
 
   // Check if session in 'active' state has expired (>1hr)
   if (feedingSession.status === 'active' && feedingSession.expiresAt) {
@@ -609,7 +620,7 @@ export async function getDbTimersState() {
         `UPDATE feeding_timers 
          SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
          WHERE id = 'active_session' 
-         RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+         RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
         [feedingSession.expiresAt]
       );
       feedingSession = updateRes.rows[0];
@@ -631,26 +642,26 @@ export async function getDbTimersState() {
 }
 
 /**
- * Start a 1-hour feeding session in PostgreSQL DB
+ * Start a feeding or sleeping session in PostgreSQL DB
  */
-export async function startDbFeedingSession() {
+export async function startDbFeedingSession(sessionType = 'feeding') {
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+  const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000) : null; // 1 hour for feeding, null for sleep
 
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, status, start_time, end_time, expires_at, updated_at)
-     VALUES ('active_session', 'active', $1, NULL, $2, CURRENT_TIMESTAMP)
+    `INSERT INTO feeding_timers (id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ('active_session', 'active', $1, $2, NULL, $3, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE 
-     SET status = 'active', start_time = $1, end_time = NULL, expires_at = $2, updated_at = CURRENT_TIMESTAMP
-     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [now.toISOString(), expiresAt.toISOString()]
+     SET status = 'active', session_type = $1, start_time = $2, end_time = NULL, expires_at = $3, updated_at = CURRENT_TIMESTAMP
+     RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+    [sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
   );
 
   return res.rows[0];
 }
 
 /**
- * Stop an active feeding session in PostgreSQL DB
+ * Stop an active feeding/sleeping session in PostgreSQL DB
  */
 export async function stopDbFeedingSession() {
   const now = new Date();
@@ -659,23 +670,23 @@ export async function stopDbFeedingSession() {
     `UPDATE feeding_timers 
      SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
      WHERE id = 'active_session' 
-     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+     RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
     [now.toISOString()]
   );
 
-  return res.rows[0] || { id: 'active_session', status: 'ended', startTime: now.toISOString(), endTime: now.toISOString() };
+  return res.rows[0] || { id: 'active_session', status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };
 }
 
 /**
- * Reset feeding session to IDLE in PostgreSQL DB
+ * Reset feeding/sleeping session to IDLE in PostgreSQL DB
  */
 export async function resetDbFeedingSession() {
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, status, start_time, end_time, expires_at, updated_at)
-     VALUES ('active_session', 'idle', NULL, NULL, NULL, CURRENT_TIMESTAMP)
+    `INSERT INTO feeding_timers (id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ('active_session', 'idle', 'feeding', NULL, NULL, NULL, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE 
-     SET status = 'idle', start_time = NULL, end_time = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
-     RETURNING id, status, start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`
+     SET status = 'idle', session_type = 'feeding', start_time = NULL, end_time = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+     RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`
   );
 
   return res.rows[0];
@@ -713,6 +724,37 @@ export async function openDbFormulaBottle(bottleType) {
 export async function finishDbFormulaBottle(id) {
   await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1', [id]);
   return true;
+}
+
+/**
+ * Get Baby Profile from PostgreSQL DB
+ */
+export async function getDbBabyProfile() {
+  const res = await queryDb(
+    `SELECT id, name, TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", updated_at AS "updatedAt"
+     FROM baby_profile
+     WHERE id = 'default_baby' LIMIT 1`
+  );
+  return res.rows[0] || null;
+}
+
+/**
+ * Save / Update Baby Profile in PostgreSQL DB
+ */
+export async function saveDbBabyProfile(birthDate, name = 'Baby') {
+  if (!birthDate) {
+    await queryDb(`DELETE FROM baby_profile WHERE id = 'default_baby'`);
+    return null;
+  }
+  const res = await queryDb(
+    `INSERT INTO baby_profile (id, name, birth_date, updated_at)
+     VALUES ('default_baby', $1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (id) DO UPDATE
+     SET name = EXCLUDED.name, birth_date = EXCLUDED.birth_date, updated_at = CURRENT_TIMESTAMP
+     RETURNING id, name, TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", updated_at AS "updatedAt"`,
+    [name, birthDate]
+  );
+  return res.rows[0];
 }
 
 export default pool;

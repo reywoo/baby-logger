@@ -24,13 +24,30 @@ async function generateWithGemini(ai, contents, config) {
   }
 }
 
-function formatSubCategoryRules(subCategoriesMap) {
+function formatSubCategoryRules(subCategoriesMap, hasBirthDate = true) {
+  const defaultRules = {
+    feeding: ["formula", "breastmilk", "solids"],
+    sleep: ["nap", "night_sleep"],
+    diaper: ["wet", "dirty", "both"],
+    health: ["medicine", "temperature", "vaccine", "symptom", "doctor"],
+    activity: ["tummy_time", "play", "outdoor", "bath", "reading"],
+    other: ["other"],
+  };
 
-  if (!subCategoriesMap || typeof subCategoriesMap !== 'object') {
-    return `   - feeding: "formula", "breastmilk", "solids"\n   - sleep: "nap", "night_sleep"\n   - diaper: "wet", "dirty", "both"\n   - health: "medicine", "temperature", "vaccine", "symptom", "doctor"\n   - activity: "tummy_time", "play", "outdoor", "bath", "reading"\n   - other: "other"`;
+  if (hasBirthDate) {
+    defaultRules.growth = ["weight", "height"];
   }
 
-  return Object.entries(subCategoriesMap)
+  if (subCategoriesMap && typeof subCategoriesMap === 'object') {
+    Object.entries(subCategoriesMap).forEach(([cat, subs]) => {
+      if (cat === 'growth' && !hasBirthDate) return;
+      if (Array.isArray(subs) && subs.length > 0) {
+        defaultRules[cat] = subs;
+      }
+    });
+  }
+
+  return Object.entries(defaultRules)
     .map(([cat, subs]) => `   - ${cat}: ${subs.map(s => `"${s}"`).join(', ')}`)
     .join('\n');
 }
@@ -52,7 +69,7 @@ function extractJsonObject(text) {
 /**
  * Service to process multimodal audio input or natural text with Gemini
  */
-export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null) {
+export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null, hasBirthDate = true) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
@@ -62,21 +79,24 @@ export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, 
   const base64Audio = audioBuffer.toString('base64');
   const currentIso = new Date().toISOString();
 
-  const subCatRules = formatSubCategoryRules(subCategoriesMap);
+  const subCatRules = formatSubCategoryRules(subCategoriesMap, hasBirthDate);
+  const categoriesList = hasBirthDate
+    ? '"feeding", "sleep", "diaper", "growth", "health", "activity", or "other"'
+    : '"feeding", "sleep", "diaper", "health", "activity", or "other" (NOTE: "growth" is DISABLED because baby birthday is not set)';
 
   const prompt = `You are a helpful family assistant & baby activity logger. Current ISO time is: ${currentIso}.
 Listen carefully to the audio clip provided. The speaker may be using Chinese (Mandarin), English, or a mix of both.
 
 Extract and structure the activity log into a clean JSON object.
 Follow these guidelines strictly:
-1. Identify the category: "feeding", "sleep", "diaper", "health", "activity", or "other".
-2. Identify subCategory ONLY from these fixed allowed subcategories for each category:
+1. Identify the category: ${categoriesList}.
+${!hasBirthDate ? '   - CRITICAL: Baby birth date is NOT set. You MUST NOT categorize any input into "growth". Use "other" or appropriate category instead.\n' : ''}2. Identify subCategory ONLY from these fixed allowed subcategories for each category:
 ${subCatRules}
    - CRITICAL: You MUST choose one of the exact subcategories listed above for the chosen category. Do NOT invent or output new custom subcategories.
-3. Identify any amounts (e.g. 120 ml, 4 oz, 36.8 C), duration (e.g. 45 mins, 1.5 hrs), or status.
+3. Identify any amounts (e.g. 120 ml, 4 oz, 5.2 kg, 60 cm, 36.8 C), duration (e.g. 45 mins, 1.5 hrs), or status.
 4. Identify action timing:
    - "startTime": ISO timestamp when the action started (e.g., if mentioned "at 2pm" or "30 mins ago", calculate against current ISO time. Otherwise default to current ISO time).
-   - "endTime": ISO timestamp when the action ended. CRITICAL: For instant categories ("diaper" and "health"), ALWAYS set "endTime" equal to "startTime", and set "duration" to null.
+   - "endTime": ISO timestamp when the action ended. CRITICAL: For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime", and set "duration" to null.
    - For interval categories ("feeding", "sleep", "activity", "other"), set "endTime" and "duration" when mentioned or calculated.
 5. Provide a clear, natural English summary ("summaryEn") of what happened.
 6. Provide the exact Chinese text or transcript ("originalZh") corresponding to what was said (translated to natural Chinese if spoken in English).
@@ -84,7 +104,7 @@ ${subCatRules}
 
 Return ONLY a valid JSON object matching this exact structure:
 {
-  "category": "feeding | sleep | diaper | health | activity | other",
+  "category": "${hasBirthDate ? 'feeding | sleep | diaper | growth | health | activity | other' : 'feeding | sleep | diaper | health | activity | other'}",
   "subCategory": "one of the fixed subcategory strings for the chosen category",
   "amount": "120 ml, 36.8 C, or null",
   "duration": "1 hr or null",
@@ -125,7 +145,7 @@ Return ONLY a valid JSON object matching this exact structure:
 /**
  * Process text prompt fallback with Gemini
  */
-export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null) {
+export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null, hasBirthDate = true) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
@@ -133,22 +153,25 @@ export async function processTextWithGemini(textInput, userApiKey, subCategories
 
   const ai = new GoogleGenAI({ apiKey });
   const currentIso = new Date().toISOString();
-  const subCatRules = formatSubCategoryRules(subCategoriesMap);
+  const subCatRules = formatSubCategoryRules(subCategoriesMap, hasBirthDate);
+  const categoriesList = hasBirthDate
+    ? '"feeding", "sleep", "diaper", "growth", "health", "activity", or "other"'
+    : '"feeding", "sleep", "diaper", "health", "activity", or "other" (NOTE: "growth" is DISABLED because baby birthday is not set)';
 
   const prompt = `You are a family assistant & baby log parser. Current ISO time is: ${currentIso}.
 Parse this user log entry: "${textInput}". The text may be in Chinese, English, or mixed.
 
 Extract timing & category details:
-- "category": "feeding | sleep | diaper | health | activity | other"
-- "subCategory": MUST be chosen from one of these fixed allowed subcategories for each category:
+- "category": ${categoriesList}
+${!hasBirthDate ? '- CRITICAL: Baby birth date is NOT set. You MUST NOT categorize into "growth". Use "other" or another suitable category.\n' : ''}- "subCategory": MUST be chosen from one of these fixed allowed subcategories for each category:
 ${subCatRules}
   - CRITICAL: You MUST choose one of the exact subcategories listed above for the chosen category. Do NOT invent or output new custom subcategories.
 - "startTime": ISO timestamp of when action started.
-- "endTime": ISO timestamp of when action ended. For instant categories ("diaper" and "health"), ALWAYS set "endTime" equal to "startTime" and set "duration" to null.
+- "endTime": ISO timestamp of when action ended. For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime" and set "duration" to null.
 
 Return ONLY a valid JSON object:
 {
-  "category": "feeding | sleep | diaper | health | activity | other",
+  "category": "${hasBirthDate ? 'feeding | sleep | diaper | growth | health | activity | other' : 'feeding | sleep | diaper | health | activity | other'}",
   "subCategory": "one of the fixed subcategory strings for the chosen category",
   "amount": "e.g. 120 ml, 36.8 C, or null",
   "duration": "e.g. 1 hr or null",

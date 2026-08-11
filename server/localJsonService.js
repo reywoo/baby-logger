@@ -106,7 +106,7 @@ export function updateFallbackLogEntry(id, logData) {
 const LOCAL_TIMERS_FILE = path.join(DATA_DIR, 'timers.json');
 
 const defaultTimersState = {
-  feedingSession: { id: 'active_session', status: 'idle', startTime: null, endTime: null, expiresAt: null },
+  feedingSession: { id: 'active_session', status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null },
   openedBottles: [],
 };
 
@@ -117,7 +117,11 @@ function getLocalTimers() {
       return defaultTimersState;
     }
     const data = fs.readFileSync(LOCAL_TIMERS_FILE, 'utf8');
-    return JSON.parse(data || JSON.stringify(defaultTimersState));
+    const parsed = JSON.parse(data || JSON.stringify(defaultTimersState));
+    if (parsed.feedingSession && !parsed.feedingSession.sessionType) {
+      parsed.feedingSession.sessionType = 'feeding';
+    }
+    return parsed;
   } catch (err) {
     console.error('Error reading local timers:', err);
     return defaultTimersState;
@@ -145,17 +149,18 @@ export async function getFallbackTimers() {
   return state;
 }
 
-export async function startFallbackFeedingSession() {
+export async function startFallbackFeedingSession(sessionType = 'feeding') {
   const state = getLocalTimers();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000);
+  const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000).toISOString() : null;
 
   state.feedingSession = {
     id: 'active_session',
     status: 'active',
+    sessionType,
     startTime: now.toISOString(),
     endTime: null,
-    expiresAt: expiresAt.toISOString(),
+    expiresAt,
   };
 
   saveLocalTimers(state);
@@ -182,6 +187,7 @@ export async function resetFallbackFeedingSession() {
   state.feedingSession = {
     id: 'active_session',
     status: 'idle',
+    sessionType: 'feeding',
     startTime: null,
     endTime: null,
     expiresAt: null,
@@ -220,5 +226,37 @@ export async function finishFallbackFormulaBottle(id) {
   state.openedBottles = state.openedBottles.filter(b => b.id !== id);
   saveLocalTimers(state);
   return true;
+}
+
+const LOCAL_BABY_PROFILE_FILE = path.join(DATA_DIR, 'baby_profile.json');
+
+export async function getFallbackBabyProfile() {
+  try {
+    if (!fs.existsSync(LOCAL_BABY_PROFILE_FILE)) {
+      return null;
+    }
+    const data = fs.readFileSync(LOCAL_BABY_PROFILE_FILE, 'utf8');
+    return JSON.parse(data || 'null');
+  } catch (err) {
+    console.error('Error reading local baby profile:', err);
+    return null;
+  }
+}
+
+export async function saveFallbackBabyProfile(birthDate, name = 'Baby') {
+  if (!birthDate) {
+    if (fs.existsSync(LOCAL_BABY_PROFILE_FILE)) {
+      fs.unlinkSync(LOCAL_BABY_PROFILE_FILE);
+    }
+    return null;
+  }
+  const profile = {
+    id: 'default_baby',
+    name,
+    birthDate,
+    updatedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(LOCAL_BABY_PROFILE_FILE, JSON.stringify(profile, null, 2));
+  return profile;
 }
 

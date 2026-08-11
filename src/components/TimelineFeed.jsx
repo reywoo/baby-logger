@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle } from 'lucide-react';
+import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle, Ruler } from 'lucide-react';
 import { parseDurationToMinutes } from '../utils/timeUtils';
 
 export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) {
@@ -143,6 +143,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
       case 'feeding': return 'badge-feeding';
       case 'sleep': return 'badge-sleep';
       case 'diaper': return 'badge-diaper';
+      case 'growth': return 'badge-growth';
       case 'health': return 'badge-health';
       case 'activity': return 'badge-activity';
       default: return 'badge-other';
@@ -154,6 +155,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
       case 'feeding': return <Milk size={14} />;
       case 'sleep': return <Moon size={14} />;
       case 'diaper': return <Baby size={14} />;
+      case 'growth': return <Ruler size={14} />;
       case 'health': return <HeartPulse size={14} />;
       case 'activity': return <Activity size={14} />;
       default: return <FileText size={14} />;
@@ -420,7 +422,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
 
                         {(log.amount || log.duration) && (
                           <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.35rem', fontSize: '0.8rem' }}>
-                            {log.amount && <span style={{ color: 'var(--feeding-color)', fontWeight: 600 }}>🥛 {log.amount}</span>}
+                            {log.amount && <span style={{ color: log.category === 'growth' ? '#10b981' : 'var(--feeding-color)', fontWeight: 600 }}>{log.category === 'growth' ? '📏' : '🥛'} {log.amount}</span>}
                             {log.duration && <span style={{ color: 'var(--sleep-color)', fontWeight: 600 }}>⏱️ {log.duration}</span>}
                           </div>
                         )}

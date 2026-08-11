@@ -1,7 +1,9 @@
 import React from 'react';
-import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Zap } from 'lucide-react';
+import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Zap, Ruler, Lock } from 'lucide-react';
 
-export default function QuickLogButtons({ onSelectQuick, lang, t }) {
+export default function QuickLogButtons({ onSelectQuick, lang, t, birthDate, onOpenBirthdayModal }) {
+  const isBirthdaySet = !!birthDate;
+
   const quickCategories = [
     {
       category: 'feeding',
@@ -13,6 +15,7 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Feeding',
       subZh: '奶粉 • 母乳 • 辅食',
       subEn: 'Formula • Milk • Food',
+      requiresBirthday: false,
     },
     {
       category: 'sleep',
@@ -24,6 +27,7 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Sleep',
       subZh: '午睡 • 小憩 • 夜间',
       subEn: 'Nap • Rest • Night',
+      requiresBirthday: false,
     },
     {
       category: 'diaper',
@@ -35,7 +39,19 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Diaper',
       subZh: '小便 (Pee) • 大便 (Poop) • 混合',
       subEn: 'Pee • Poop (Bowel Movement) • Both',
-
+      requiresBirthday: false,
+    },
+    {
+      category: 'growth',
+      subCategory: 'weight',
+      summaryEn: 'Growth (Weight/Height) log',
+      originalZh: '生长发育 (身高/体重)',
+      icon: <Ruler style={{ color: '#10b981' }} size={24} />,
+      labelZh: '生长发育 (Growth)',
+      labelEn: 'Growth',
+      subZh: '体重(kg) • 身高(cm)',
+      subEn: 'Weight (kg) • Height (cm)',
+      requiresBirthday: true,
     },
     {
       category: 'health',
@@ -47,6 +63,7 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Health',
       subZh: '体温 • 用药 • 疫苗',
       subEn: 'Meds • Temp • Vaccine',
+      requiresBirthday: false,
     },
     {
       category: 'activity',
@@ -58,6 +75,7 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Activity',
       subZh: '趴卧 • 游戏 • 户外',
       subEn: 'Play • Tummy time • Outing',
+      requiresBirthday: false,
     },
     {
       category: 'other',
@@ -69,8 +87,21 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
       labelEn: 'Other',
       subZh: '自由记录与备注',
       subEn: 'Custom notes & logs',
+      requiresBirthday: false,
     },
   ];
+
+  const handleCardClick = (cat) => {
+    if (cat.requiresBirthday && !isBirthdaySet) {
+      if (onOpenBirthdayModal) {
+        onOpenBirthdayModal();
+      } else {
+        alert(lang === 'zh' ? '请先在顶部设置宝宝生日后，方可记录身高体重数据！' : "Please set the baby's birth date first before logging growth data!");
+      }
+      return;
+    }
+    onSelectQuick(cat);
+  };
 
   return (
     <div style={{ marginTop: '1.5rem' }}>
@@ -79,25 +110,37 @@ export default function QuickLogButtons({ onSelectQuick, lang, t }) {
         {t.quickLogTitle || (lang === 'zh' ? '快捷分类记录' : 'Quick Category Log')}
       </h3>
       <div className="quick-grid">
-        {quickCategories.map((cat, index) => (
-          <div
-            key={index}
-            className="quick-card"
-            onClick={() => onSelectQuick(cat)}
-          >
-            {cat.icon}
-            <div>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                {lang === 'zh' ? cat.labelZh : cat.labelEn}
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
-                {lang === 'zh' ? cat.subZh : cat.subEn}
+        {quickCategories.map((cat, index) => {
+          const disabled = cat.requiresBirthday && !isBirthdaySet;
+          return (
+            <div
+              key={index}
+              className={`quick-card ${disabled ? 'disabled-growth-card' : ''}`}
+              onClick={() => handleCardClick(cat)}
+              style={{
+                position: 'relative',
+                opacity: disabled ? 0.55 : 1,
+                filter: disabled ? 'grayscale(0.6)' : 'none',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+              title={disabled ? (lang === 'zh' ? '需先设置宝宝生日才能解锁生长记录' : 'Set baby birthday to unlock growth log') : ''}
+            >
+              {cat.icon}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  {lang === 'zh' ? cat.labelZh : cat.labelEn}
+                  {disabled && <Lock size={13} style={{ color: 'var(--text-muted)' }} />}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                  {disabled
+                    ? (lang === 'zh' ? '🔒 需先输入生日解锁' : '🔒 Set birthday first')
+                    : (lang === 'zh' ? cat.subZh : cat.subEn)}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
-
