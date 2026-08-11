@@ -231,26 +231,25 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
 
         {/* Start Time & End Time */}
         <div className="responsive-grid-2col">
-
-          <div>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
+          <div style={{ width: '100%', minWidth: 0 }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>
               📅 {isZh ? '开始时间 (Start Time)' : 'Start Time'}
             </label>
             <input
               type="datetime-local"
-              className="input-field"
+              className="input-field compact-datetime"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
 
-          <div>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
+          <div style={{ width: '100%', minWidth: 0 }}>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem', fontWeight: 600 }}>
               🏁 {isZh ? '结束时间 (End Time)' : 'End Time'}
             </label>
             <input
               type="datetime-local"
-              className="input-field"
+              className="input-field compact-datetime"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
             />

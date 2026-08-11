@@ -650,4 +650,43 @@ input[type="datetime-local"].input-field {
   }
 }
 
+/* Responsive Grid & Mobile Input Bounding Rules */
+.responsive-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  .responsive-grid-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
+input[type="datetime-local"] {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+
+/* Sleek Compact Datetime Inputs */
+.compact-datetime,
+input[type="datetime-local"].compact-datetime {
+  height: 38px !important;
+  padding: 0.4rem 0.65rem !important;
+  font-size: 0.82rem !important;
+  max-width: 260px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  border-radius: 0.6rem !important;
+  color: #fff !important;
+  background: rgba(15, 23, 42, 0.7) !important;
+  border: 1px solid var(--card-border) !important;
+}
+
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.8);
+}
+
 

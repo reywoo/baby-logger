@@ -403,7 +403,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
               </label>
               <input
                 type="datetime-local"
-                className="input-field"
+                className="input-field compact-datetime"
                 value={startTime}
                 onChange={(e) => handleStartTimeChange(e.target.value)}
               />
@@ -416,7 +416,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
                 </label>
                 <input
                   type="datetime-local"
-                  className="input-field"
+                  className="input-field compact-datetime"
                   value={startTime}
                   onChange={(e) => handleStartTimeChange(e.target.value)}
                 />
@@ -427,7 +427,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
                 </label>
                 <input
                   type="datetime-local"
-                  className="input-field"
+                  className="input-field compact-datetime"
                   value={endTime}
                   onChange={(e) => handleEndTimeChange(e.target.value)}
                 />

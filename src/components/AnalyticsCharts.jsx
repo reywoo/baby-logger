@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Info } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 
 export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
   const isZh = lang === 'zh';
   const [metric, setMetric] = useState('formula_volume'); // 'formula_volume' | 'sleep_time' | 'weight' | 'height'
   const [daysCount, setDaysCount] = useState(7); // 7 | 14 | 30
+  const [activeTooltip, setActiveTooltip] = useState(null); // dateKey of active tooltip
 
   // Helper to format Date to YYYY-MM-DD
   const formatDateKey = (d) => {
@@ -227,20 +228,33 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
     }
   }, [logs, metric, daysCount]);
 
-  // Generate 4 Y-Axis Ticks
+  // Generate 4 Clean Y-Axis Ticks
   const yTicks = useMemo(() => {
     const minY = chartData.minY;
     const maxY = chartData.maxY;
     const range = maxY - minY || 1;
     const step = range / 3;
 
-    return [
-      { val: parseFloat(maxY.toFixed(1)), percent: 100 },
-      { val: parseFloat((minY + step * 2).toFixed(1)), percent: 66.6 },
-      { val: parseFloat((minY + step * 1).toFixed(1)), percent: 33.3 },
-      { val: parseFloat(minY.toFixed(1)), percent: 0 },
+    const rawTicks = [
+      { val: maxY, percent: 100 },
+      { val: minY + step * 2, percent: 66.6 },
+      { val: minY + step * 1, percent: 33.3 },
+      { val: minY, percent: 0 },
     ];
-  }, [chartData.minY, chartData.maxY]);
+
+    return rawTicks.map((t) => {
+      let displayVal = t.val;
+      if (metric === 'formula_volume') {
+        displayVal = Math.round(t.val);
+      } else {
+        displayVal = Number.isInteger(t.val) ? t.val : parseFloat(t.val.toFixed(1));
+      }
+      return {
+        ...t,
+        displayVal,
+      };
+    });
+  }, [chartData.minY, chartData.maxY, metric]);
 
   // Calculate coordinates for valid data points in Scatter/Line plot
   const activePoints = useMemo(() => {
@@ -249,15 +263,15 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
     const count = items.length;
 
     return items.map((item, idx) => {
-      // Horizontal X percent (from 0% to 100%)
+      // Horizontal X percent (0 to 100)
       const xPct = count > 1 ? (idx / (count - 1)) * 100 : 50;
-      // Vertical Y percent from bottom (0% to 100%)
+      // Vertical Y percent from bottom (0 to 100)
       const yPct = item.hasValue ? Math.min(100, Math.max(0, ((item.value - minY) / range) * 100)) : null;
 
       return {
         ...item,
-        xPct,
-        yPct,
+        xPct: parseFloat(xPct.toFixed(2)),
+        yPct: yPct !== null ? parseFloat(yPct.toFixed(2)) : null,
         idx,
       };
     });
@@ -278,7 +292,7 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
             <span>{isZh ? '宝宝数据分析与趋势图' : 'Baby Analytics & Trends'}</span>
           </h3>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {isZh ? '直观追踪每日奶量、睡眠时长及生长发育趋势' : 'Visualize daily feeding, sleep, weight, & height trends'}
+            {isZh ? '点击图表中的数据点切换显示详细数据' : 'Tap points in the chart to toggle value tags'}
           </p>
         </div>
 
@@ -315,7 +329,10 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
         <select
           className="input-field"
           value={metric}
-          onChange={(e) => setMetric(e.target.value)}
+          onChange={(e) => {
+            setMetric(e.target.value);
+            setActiveTooltip(null);
+          }}
           style={{ width: '100%', fontSize: '0.92rem', padding: '0.65rem 0.85rem' }}
         >
           <option value="formula_volume">🍼 {isZh ? '配方奶喂养量 (Formula Volume - ml)' : 'Formula Feeding Volume (ml)'}</option>
@@ -327,19 +344,21 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
 
       {/* Stat Badge Banner */}
       <div style={{
-        padding: '0.6rem 0.9rem',
+        padding: '0.65rem 0.9rem',
         borderRadius: '0.75rem',
         background: 'rgba(99, 102, 241, 0.12)',
         border: '1px solid rgba(99, 102, 241, 0.25)',
         display: 'flex',
         justify: 'space-between',
         alignItems: 'center',
-        marginBottom: '1rem'
+        marginBottom: '1rem',
+        gap: '0.5rem',
+        flexWrap: 'wrap'
       }}>
-        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
           {isZh ? chartData.titleZh : chartData.titleEn}
         </div>
-        <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--primary-accent)' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', padding: '0.25rem 0.65rem', borderRadius: '0.5rem', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
           {isZh ? chartData.avgLabelZh : chartData.avgLabelEn}
         </div>
       </div>
@@ -361,7 +380,7 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
         <div style={{ position: 'absolute', left: 0, top: '1.25rem', bottom: '1.8rem', width: '3.2rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: '0.4rem', borderRight: '1px solid rgba(255,255,255,0.1)' }}>
           {yTicks.map((tick, i) => (
             <span key={i} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'monospace', fontWeight: 600 }}>
-              {tick.val}
+              {tick.displayVal}
             </span>
           ))}
         </div>
@@ -380,52 +399,73 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
               }}
             />
           ))}
-
-          {/* Average Line for Feeding & Sleep */}
-          {(metric === 'formula_volume' || metric === 'sleep_time') && chartData.avgVal > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                top: `${Math.min(96, Math.max(4, 100 - ((chartData.avgVal - chartData.minY) / (chartData.maxY - chartData.minY || 1)) * 100))}%`,
-                borderTop: '2px dashed #f472b6',
-                zIndex: 2,
-              }}
-            >
-              <span style={{ position: 'absolute', right: '4px', top: '-16px', fontSize: '0.62rem', color: '#f472b6', background: 'rgba(15, 23, 42, 0.85)', padding: '1px 5px', borderRadius: '4px', fontWeight: 800 }}>
-                {isZh ? `均值: ${chartData.avgVal}${chartData.unit}` : `Avg: ${chartData.avgVal}${chartData.unit}`}
-              </span>
-            </div>
-          )}
         </div>
 
-        {/* 2. SVG CONNECTING LINE */}
-        {validPoints.length >= 2 && (
-          <svg
-            style={{ position: 'absolute', left: '3.3rem', right: '0.6rem', top: '1.25rem', bottom: '1.8rem', width: 'calc(100% - 3.9rem)', height: 'calc(100% - 3.05rem)', pointerEvents: 'none', zIndex: 3 }}
-          >
+        {/* 2. SVG CONNECTING LINE & GRADIENT AREA */}
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          style={{
+            position: 'absolute',
+            left: '3.3rem',
+            right: '0.6rem',
+            top: '1.25rem',
+            bottom: '1.8rem',
+            width: 'calc(100% - 3.9rem)',
+            height: 'calc(100% - 3.05rem)',
+            pointerEvents: 'none',
+            zIndex: 3,
+            overflow: 'visible',
+          }}
+        >
+          <defs>
+            <linearGradient id="purpleAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#c084fc" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.0" />
+            </linearGradient>
+            <linearGradient id="greenAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Glowing Fill Area beneath line */}
+          {validPoints.length >= 2 && (
+            <polygon
+              fill={metric === 'weight' || metric === 'height' ? 'url(#greenAreaGrad)' : 'url(#purpleAreaGrad)'}
+              points={`
+                ${validPoints[0].xPct},100 
+                ${validPoints.map((p) => `${p.xPct},${100 - p.yPct}`).join(' ')} 
+                ${validPoints[validPoints.length - 1].xPct},100
+              `}
+            />
+          )}
+
+          {/* Crisp Connected Polyline */}
+          {validPoints.length >= 2 && (
             <polyline
               fill="none"
-              stroke={metric === 'weight' || metric === 'height' ? '#34d399' : '#8b5cf6'}
+              stroke={metric === 'weight' || metric === 'height' ? '#34d399' : '#c084fc'}
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              points={validPoints.map((p) => `${p.xPct}%,${100 - p.yPct}%`).join(' ')}
-              style={{ filter: 'drop-shadow(0px 2px 6px rgba(139, 92, 246, 0.5))' }}
+              vectorEffect="non-scaling-stroke"
+              points={validPoints.map((p) => `${p.xPct},${100 - p.yPct}`).join(' ')}
+              style={{ filter: 'drop-shadow(0px 3px 6px rgba(192, 132, 252, 0.6))' }}
             />
-          </svg>
-        )}
+          )}
+        </svg>
 
-        {/* 3. SCATTER DATA POINTS & DIRECT VALUE LABELS */}
+        {/* 3. INTERACTIVE TOUCH / TAP / HOVER POPOVER DATA POINTS */}
         <div style={{ position: 'relative', width: '100%', height: '100%', zIndex: 4 }}>
           {activePoints.map((pt) => {
-            // Label visibility rules for 30-day mode to prevent label crowding
             const showXLabel = daysCount <= 14 || pt.idx % 3 === 0 || pt.idx === activePoints.length - 1;
+            const isActive = activeTooltip === pt.dateKey;
 
             return (
               <div
                 key={pt.dateKey}
+                onClick={() => setActiveTooltip((prev) => (prev === pt.dateKey ? null : pt.dateKey))}
                 style={{
                   position: 'absolute',
                   left: `${pt.xPct}%`,
@@ -435,9 +475,36 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
+                  cursor: 'pointer',
+                  width: `${100 / activePoints.length}%`,
+                  minWidth: '20px',
                 }}
               >
-                {/* Data Point Marker & Direct Value Display */}
+                {/* Floating Touch Popover Card */}
+                {isActive && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: pt.hasValue ? `${Math.min(80, pt.yPct + 10)}%` : '40%',
+                      background: 'rgba(15, 23, 42, 0.95)',
+                      border: `1px solid ${metric === 'weight' || metric === 'height' ? '#34d399' : '#c084fc'}`,
+                      borderRadius: '8px',
+                      padding: '4px 8px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+                      whiteSpace: 'nowrap',
+                      pointerEvents: 'none',
+                      zIndex: 20,
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>{pt.dateKey}</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 800, color: metric === 'weight' || metric === 'height' ? '#34d399' : '#c084fc' }}>
+                      {pt.hasValue ? `${pt.value} ${pt.unit}` : (isZh ? '无记录' : 'No Data')}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data Point Marker */}
                 {pt.hasValue ? (
                   <div
                     style={{
@@ -445,41 +512,24 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
                       bottom: `${pt.yPct}%`,
                       transform: 'translateY(50%)',
                       display: 'flex',
-                      flexDirection: 'column',
                       alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    {/* Direct Value Tag (NO Hover Required!) */}
-                    <div
-                      style={{
-                        position: 'absolute',
-                        bottom: '14px',
-                        fontSize: daysCount === 30 ? '0.58rem' : '0.66rem',
-                        fontWeight: 800,
-                        color: metric === 'weight' || metric === 'height' ? '#34d399' : '#a78bfa',
-                        background: 'rgba(15, 23, 42, 0.9)',
-                        padding: '1px 3px',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        whiteSpace: 'nowrap',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                        pointerEvents: 'none',
-                      }}
-                    >
-                      {pt.value}{pt.unit}
-                    </div>
-
                     {/* Glowing Scatter Dot */}
                     <div
                       style={{
-                        width: daysCount === 30 ? '8px' : '10px',
-                        height: daysCount === 30 ? '8px' : '10px',
+                        width: isActive ? (daysCount === 30 ? '12px' : '14px') : (daysCount === 30 ? '8px' : '10px'),
+                        height: isActive ? (daysCount === 30 ? '12px' : '14px') : (daysCount === 30 ? '8px' : '10px'),
                         borderRadius: '50%',
                         background: metric === 'weight' || metric === 'height'
                           ? 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)'
-                          : 'linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%)',
+                          : 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)',
                         border: '2px solid #fff',
-                        boxShadow: '0 0 8px rgba(236, 72, 153, 0.8)',
+                        boxShadow: isActive
+                          ? '0 0 14px rgba(192, 132, 252, 1)'
+                          : '0 0 8px rgba(192, 132, 252, 0.8)',
+                        transition: 'all 0.2s ease',
                       }}
                     />
                   </div>
@@ -503,8 +553,8 @@ export default function AnalyticsCharts({ logs = [], lang = 'zh' }) {
                       position: 'absolute',
                       bottom: '-1.4rem',
                       fontSize: daysCount === 30 ? '0.58rem' : '0.66rem',
-                      color: pt.hasValue ? '#fff' : 'var(--text-muted)',
-                      fontWeight: pt.hasValue ? 700 : 500,
+                      color: isActive ? 'var(--primary-accent)' : pt.hasValue ? '#fff' : 'var(--text-muted)',
+                      fontWeight: isActive || pt.hasValue ? 700 : 500,
                       whiteSpace: 'nowrap',
                     }}
                   >
