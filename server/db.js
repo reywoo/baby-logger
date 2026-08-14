@@ -232,15 +232,11 @@ export async function initDb() {
         await client.query(`UPDATE accounts SET role = 'user' WHERE id = $1 OR username = 'yoyo'`, [yoyoAccountId]);
       }
 
-      // Backfill any existing data that doesn't have an account_id to yoyo's account
-      await client.query(`UPDATE action_logs SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
-      await client.query(`UPDATE feeding_timers SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
-      await client.query(`UPDATE opened_formula_bottles SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
-      await client.query(`UPDATE baby_profile SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
-
-      // Remove legacy non-scoped duplicate rows if scoped row already exists
-      await client.query(`DELETE FROM feeding_timers WHERE id = 'active_session' AND account_id IS NOT NULL`);
-      await client.query(`DELETE FROM baby_profile WHERE id = 'default_baby' AND account_id IS NOT NULL`);
+      // Remove any orphaned baby_profile or timer records from deleted test accounts
+      await client.query(`DELETE FROM baby_profile WHERE account_id IS NULL OR account_id NOT IN (SELECT id FROM accounts)`);
+      await client.query(`DELETE FROM baby_profile WHERE id != 'baby_' || account_id`);
+      await client.query(`DELETE FROM feeding_timers WHERE account_id IS NULL OR account_id NOT IN (SELECT id FROM accounts)`);
+      await client.query(`DELETE FROM feeding_timers WHERE id != 'active_session_' || account_id`);
 
       console.log('PostgreSQL Database schema initialized successfully.');
     } finally {
@@ -969,6 +965,10 @@ export async function getAllDbAccounts() {
 }
 
 export async function deleteDbAccount(id) {
+  await queryDb('DELETE FROM baby_profile WHERE account_id = $1 OR id = $2', [id, 'baby_' + id]);
+  await queryDb('DELETE FROM feeding_timers WHERE account_id = $1 OR id = $2', [id, 'active_session_' + id]);
+  await queryDb('DELETE FROM opened_formula_bottles WHERE account_id = $1', [id]);
+  await queryDb('DELETE FROM action_logs WHERE account_id = $1', [id]);
   await queryDb('DELETE FROM accounts WHERE id = $1', [id]);
   return true;
 }
