@@ -790,7 +790,7 @@ app.get('/api/timers', authenticateToken, async (req, res) => {
       return res.json({ success: true, ...state, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL get timers fallback to local storage:', dbErr.message);
-      const state = await getFallbackTimers();
+      const state = await getFallbackTimers(accountId);
       return res.json({ success: true, ...state, source: 'json_fallback' });
     }
   } catch (error) {
@@ -808,7 +808,7 @@ app.post('/api/timers/feeding/start', authenticateToken, async (req, res) => {
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL start feeding timer fallback to local storage:', dbErr.message);
-      const session = await startFallbackFeedingSession(sessionType);
+      const session = await startFallbackFeedingSession(sessionType, accountId);
       return res.json({ success: true, session, source: 'json_fallback' });
     }
   } catch (error) {
@@ -825,7 +825,7 @@ app.post('/api/timers/feeding/stop', authenticateToken, async (req, res) => {
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL stop feeding timer fallback to local storage:', dbErr.message);
-      const session = await stopFallbackFeedingSession();
+      const session = await stopFallbackFeedingSession(accountId);
       return res.json({ success: true, session, source: 'json_fallback' });
     }
   } catch (error) {
@@ -842,7 +842,7 @@ app.post('/api/timers/feeding/reset', authenticateToken, async (req, res) => {
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL reset feeding timer fallback to local storage:', dbErr.message);
-      const session = await resetFallbackFeedingSession();
+      const session = await resetFallbackFeedingSession(accountId);
       return res.json({ success: true, session, source: 'json_fallback' });
     }
   } catch (error) {
@@ -867,7 +867,7 @@ app.post('/api/timers/bottles/open', authenticateToken, async (req, res) => {
         return res.status(400).json({ success: false, error: dbErr.message });
       }
       console.warn('PostgreSQL open RTF bottle fallback to local storage:', dbErr.message);
-      const newBottle = await openFallbackFormulaBottle(bottleType);
+      const newBottle = await openFallbackFormulaBottle(bottleType, accountId);
       return res.json({ success: true, bottle: newBottle, source: 'json_fallback' });
     }
   } catch (error) {
@@ -884,7 +884,7 @@ app.delete('/api/timers/bottles/:id', authenticateToken, async (req, res) => {
       await finishDbFormulaBottle(id, accountId);
     } catch (dbErr) {
       console.warn('PostgreSQL finish RTF bottle fallback to local storage:', dbErr.message);
-      await finishFallbackFormulaBottle(id);
+      await finishFallbackFormulaBottle(id, accountId);
     }
     res.json({ success: true });
   } catch (error) {

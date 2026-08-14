@@ -131,11 +131,18 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
     const diffMs = Math.max(0, endObj.getTime() - startObj.getTime());
     const durationMins = Math.round(diffMs / (1000 * 60));
 
-    let durationStr = `${durationMins} mins`;
+    let durationStr = durationMins <= 1 
+      ? (lang === 'zh' ? '1 分钟' : '1 min') 
+      : (lang === 'zh' ? `${durationMins} 分钟` : `${durationMins} mins`);
+
     if (durationMins >= 60) {
       const hrs = Math.floor(durationMins / 60);
       const mins = durationMins % 60;
-      durationStr = mins > 0 ? `${hrs} hr ${mins} mins` : `${hrs} hr`;
+      if (lang === 'zh') {
+        durationStr = mins > 0 ? `${hrs} 小时 ${mins} 分钟` : `${hrs} 小时`;
+      } else {
+        durationStr = mins > 0 ? `${hrs} hr ${mins} mins` : `${hrs} hr`;
+      }
     }
 
     if (currentSessionType === 'sleep') {
@@ -146,8 +153,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
         endTime: endTimeIso,
         duration: durationStr,
         amount: '',
-        summaryEn: 'Sleep session log',
-        originalZh: '宝宝睡眠记录',
+        summaryEn: `Sleep session (${durationStr})`,
+        originalZh: `宝宝睡眠 (${durationStr})`,
         notes: '',
       });
     } else {
@@ -158,8 +165,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
         endTime: endTimeIso,
         duration: durationStr,
         amount: '',
-        summaryEn: 'Formula feeding session',
-        originalZh: '配方奶喂养记录',
+        summaryEn: `Formula feeding session (${durationStr})`,
+        originalZh: `配方奶喂养 (${durationStr})`,
         notes: '',
       });
     }

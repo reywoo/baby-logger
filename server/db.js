@@ -238,6 +238,10 @@ export async function initDb() {
       await client.query(`UPDATE opened_formula_bottles SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
       await client.query(`UPDATE baby_profile SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
 
+      // Remove legacy non-scoped duplicate rows if scoped row already exists
+      await client.query(`DELETE FROM feeding_timers WHERE id = 'active_session' AND account_id IS NOT NULL`);
+      await client.query(`DELETE FROM baby_profile WHERE id = 'default_baby' AND account_id IS NOT NULL`);
+
       console.log('PostgreSQL Database schema initialized successfully.');
     } finally {
       client.release();
@@ -693,9 +697,9 @@ export async function getDbTimersState(accountId = null) {
   const sessionRes = await queryDb(
     `SELECT id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt" 
      FROM feeding_timers 
-     WHERE id = $1 OR ($2::text IS NOT NULL AND account_id = $2)
-     ORDER BY updated_at DESC LIMIT 1`,
-    [sessionId, accountId]
+     WHERE id = $1
+     LIMIT 1`,
+    [sessionId]
   );
   let feedingSession = sessionRes.rows[0] || { id: sessionId, status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
   if (!feedingSession.sessionType) feedingSession.sessionType = 'feeding';
@@ -743,7 +747,7 @@ export async function startDbFeedingSession(sessionType = 'feeding', accountId =
     `INSERT INTO feeding_timers (id, account_id, status, session_type, start_time, end_time, expires_at, updated_at)
      VALUES ($1, $2, 'active', $3, $4, NULL, $5, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE 
-     SET status = 'active', session_type = $3, start_time = $4, end_time = NULL, expires_at = $5, account_id = COALESCE(EXCLUDED.account_id, feeding_timers.account_id), updated_at = CURRENT_TIMESTAMP
+     SET status = 'active', session_type = EXCLUDED.session_type, start_time = EXCLUDED.start_time, end_time = NULL, expires_at = EXCLUDED.expires_at, account_id = COALESCE(EXCLUDED.account_id, feeding_timers.account_id), updated_at = CURRENT_TIMESTAMP
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
     [sessionId, accountId, sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
   );
@@ -761,9 +765,9 @@ export async function stopDbFeedingSession(accountId = null) {
   const res = await queryDb(
     `UPDATE feeding_timers 
      SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
-     WHERE id = $2 OR ($3::text IS NOT NULL AND account_id = $3)
+     WHERE id = $2
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [now.toISOString(), sessionId, accountId]
+    [now.toISOString(), sessionId]
   );
 
   return res.rows[0] || { id: sessionId, status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };

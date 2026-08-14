@@ -163,13 +163,23 @@ const defaultTimersState = {
   openedBottles: [],
 };
 
-function getLocalTimers() {
+function getTimersFile(accountId = null) {
+  if (accountId) {
+    return path.join(DATA_DIR, `timers_${accountId}.json`);
+  }
+  return path.join(DATA_DIR, 'timers.json');
+}
+
+function getLocalTimers(accountId = null) {
+  const file = getTimersFile(accountId);
   try {
-    if (!fs.existsSync(LOCAL_TIMERS_FILE)) {
-      fs.writeFileSync(LOCAL_TIMERS_FILE, JSON.stringify(defaultTimersState, null, 2));
-      return defaultTimersState;
+    if (!fs.existsSync(file)) {
+      const initial = JSON.parse(JSON.stringify(defaultTimersState));
+      initial.feedingSession.id = accountId ? `active_session_${accountId}` : 'active_session';
+      fs.writeFileSync(file, JSON.stringify(initial, null, 2));
+      return initial;
     }
-    const data = fs.readFileSync(LOCAL_TIMERS_FILE, 'utf8');
+    const data = fs.readFileSync(file, 'utf8');
     const parsed = JSON.parse(data || JSON.stringify(defaultTimersState));
     if (parsed.feedingSession && !parsed.feedingSession.sessionType) {
       parsed.feedingSession.sessionType = 'feeding';
@@ -177,16 +187,17 @@ function getLocalTimers() {
     return parsed;
   } catch (err) {
     console.error('Error reading local timers:', err);
-    return defaultTimersState;
+    return JSON.parse(JSON.stringify(defaultTimersState));
   }
 }
 
-function saveLocalTimers(state) {
-  fs.writeFileSync(LOCAL_TIMERS_FILE, JSON.stringify(state, null, 2));
+function saveLocalTimers(state, accountId = null) {
+  const file = getTimersFile(accountId);
+  fs.writeFileSync(file, JSON.stringify(state, null, 2));
 }
 
-export async function getFallbackTimers() {
-  const state = getLocalTimers();
+export async function getFallbackTimers(accountId = null) {
+  const state = getLocalTimers(accountId);
   const now = new Date();
 
   // Check if feeding session is active but expired
@@ -195,20 +206,20 @@ export async function getFallbackTimers() {
       state.feedingSession.status = 'ended';
       state.feedingSession.endTime = state.feedingSession.expiresAt;
       state.feedingSession.reason = 'expired';
-      saveLocalTimers(state);
+      saveLocalTimers(state, accountId);
     }
   }
 
   return state;
 }
 
-export async function startFallbackFeedingSession(sessionType = 'feeding') {
-  const state = getLocalTimers();
+export async function startFallbackFeedingSession(sessionType = 'feeding', accountId = null) {
+  const state = getLocalTimers(accountId);
   const now = new Date();
   const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000).toISOString() : null;
 
   state.feedingSession = {
-    id: 'active_session',
+    id: accountId ? `active_session_${accountId}` : 'active_session',
     status: 'active',
     sessionType,
     startTime: now.toISOString(),
@@ -216,12 +227,12 @@ export async function startFallbackFeedingSession(sessionType = 'feeding') {
     expiresAt,
   };
 
-  saveLocalTimers(state);
+  saveLocalTimers(state, accountId);
   return state.feedingSession;
 }
 
-export async function stopFallbackFeedingSession() {
-  const state = getLocalTimers();
+export async function stopFallbackFeedingSession(accountId = null) {
+  const state = getLocalTimers(accountId);
   const now = new Date();
 
   state.feedingSession = {
@@ -230,15 +241,15 @@ export async function stopFallbackFeedingSession() {
     endTime: now.toISOString(),
   };
 
-  saveLocalTimers(state);
+  saveLocalTimers(state, accountId);
   return state.feedingSession;
 }
 
-export async function resetFallbackFeedingSession() {
-  const state = getLocalTimers();
+export async function resetFallbackFeedingSession(accountId = null) {
+  const state = getLocalTimers(accountId);
 
   state.feedingSession = {
-    id: 'active_session',
+    id: accountId ? `active_session_${accountId}` : 'active_session',
     status: 'idle',
     sessionType: 'feeding',
     startTime: null,
@@ -246,12 +257,12 @@ export async function resetFallbackFeedingSession() {
     expiresAt: null,
   };
 
-  saveLocalTimers(state);
+  saveLocalTimers(state, accountId);
   return state.feedingSession;
 }
 
-export async function openFallbackFormulaBottle(bottleType) {
-  const state = getLocalTimers();
+export async function openFallbackFormulaBottle(bottleType, accountId = null) {
+  const state = getLocalTimers(accountId);
   if (state.openedBottles.length >= 5) {
     throw new Error('Maximum limit of 5 opened bottles reached.');
   }
@@ -270,14 +281,14 @@ export async function openFallbackFormulaBottle(bottleType) {
   };
 
   state.openedBottles.unshift(newBottle);
-  saveLocalTimers(state);
+  saveLocalTimers(state, accountId);
   return newBottle;
 }
 
-export async function finishFallbackFormulaBottle(id) {
-  const state = getLocalTimers();
+export async function finishFallbackFormulaBottle(id, accountId = null) {
+  const state = getLocalTimers(accountId);
   state.openedBottles = state.openedBottles.filter(b => b.id !== id);
-  saveLocalTimers(state);
+  saveLocalTimers(state, accountId);
   return true;
 }
 
