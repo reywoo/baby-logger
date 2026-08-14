@@ -20,7 +20,7 @@ const translations = {
     appSubtitle: '语音智能识别 • 中英双语记录 • 自动解析',
     navVoice: '智能记录',
     navTimeline: '日志动态',
-    navTimer: '喂养计时',
+    navTimer: '计时器',
     navTips: '育儿指南',
     navExport: '数据导出',
 
