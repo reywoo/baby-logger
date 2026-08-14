@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer, BookOpen, Cake, Calendar, Pencil } from 'lucide-react';
+import { Mic, Clock, Download, Sparkles, Send, Plus, RefreshCw, Loader2, Timer, BookOpen, Cake, Calendar, Pencil, Users, LogOut, Shield, User } from 'lucide-react';
 import LanguageToggle from './components/LanguageToggle';
 import AudioRecorder from './components/AudioRecorder';
 import QuickLogButtons from './components/QuickLogButtons';
 import LogPreviewModal from './components/LogPreviewModal';
 import TimelineFeed from './components/TimelineFeed';
 import DataExport from './components/DataExport';
-import PasscodeLock from './components/PasscodeLock';
+import LoginModal from './components/LoginModal';
+import AdminAccountManager from './components/AdminAccountManager';
 import FeedingTimers from './components/FeedingTimers';
 import NewbornTips from './components/NewbornTips';
 import BabyBirthdayModal from './components/BabyBirthdayModal';
@@ -101,10 +102,34 @@ export default function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('family_gemini_key') || '');
   const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('family_webhook_url') || '');
 
-  // Auth & Passcode States
+  // Auth & Account States
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [authError, setAuthError] = useState('');
+  const [isAdminManagerOpen, setIsAdminManagerOpen] = useState(false);
+  const [currentRoute, setCurrentRoute] = useState(() => (
+    window.location.pathname.toLowerCase().startsWith('/admin') ? 'admin' : 'app'
+  ));
+
+  // Handle URL history push / back buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const isNavAdmin = window.location.pathname.toLowerCase().startsWith('/admin');
+      setCurrentRoute(isNavAdmin ? 'admin' : 'app');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateToAdmin = () => {
+    window.history.pushState({}, '', '/admin');
+    setCurrentRoute('admin');
+  };
+
+  const navigateToHome = () => {
+    window.history.pushState({}, '', '/');
+    setCurrentRoute('app');
+  };
 
   // Baby Profile & Birthday State
   const [babyProfile, setBabyProfile] = useState(null);
@@ -112,35 +137,35 @@ export default function App() {
 
   const t = translations[lang];
 
-  // Utility to attach passcode header
+  // Utility to attach Auth headers (Bearer Token)
   const getAuthHeaders = (extraHeaders = {}) => {
-    const passcode = localStorage.getItem('APP_PASSCODE');
+    const token = localStorage.getItem('FAMILY_AUTH_TOKEN');
     return {
       ...extraHeaders,
-      ...(passcode ? { 'x-app-passcode': passcode } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     };
   };
 
-  const verifyPasscode = async (passcodeToTest) => {
+  const checkAuthSession = async () => {
     try {
-      const headers = passcodeToTest ? { 'x-app-passcode': passcodeToTest } : getAuthHeaders();
-      const res = await fetch('/api/auth/verify', { headers });
+      const headers = getAuthHeaders();
+      const res = await fetch('/api/auth/me', { headers });
       if (res.ok) {
-        if (passcodeToTest) {
-          localStorage.setItem('APP_PASSCODE', passcodeToTest);
+        const data = await res.json();
+        if (data.success && data.user) {
+          setCurrentUser(data.user);
+          setIsAuthenticated(true);
+          return data.user;
         }
-        setIsAuthenticated(true);
-        setAuthError('');
-        return true;
-      } else {
-        setIsAuthenticated(false);
-        setAuthError(lang === 'zh' ? '密码不正确，请重试' : 'Invalid passcode. Please try again.');
-        return false;
       }
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      return null;
     } catch (err) {
-      // If error (e.g. backend offline), allow UI render
-      setIsAuthenticated(true);
-      return true;
+      console.warn('Auth session check error:', err);
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      return null;
     } finally {
       setIsAuthChecking(false);
     }
@@ -148,25 +173,46 @@ export default function App() {
 
   useEffect(() => {
     const initAuth = async () => {
-      // Check URL query parameter ?passcode=...
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlPasscode = urlParams.get('passcode');
-      if (urlPasscode) {
-        localStorage.setItem('APP_PASSCODE', urlPasscode);
-        // Strip ?passcode=... from URL bar seamlessly
-        const cleanUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
-        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
-      }
-
-      const isValid = await verifyPasscode();
-      if (isValid) {
-        fetchLogs();
-        fetchBabyProfile();
+      const user = await checkAuthSession();
+      if (user) {
+        if (user.role === 'admin') {
+          window.history.replaceState({}, '', '/admin');
+          setCurrentRoute('admin');
+        } else {
+          if (window.location.pathname.toLowerCase().startsWith('/admin')) {
+            window.history.replaceState({}, '', '/');
+            setCurrentRoute('app');
+          }
+          fetchLogs();
+          fetchBabyProfile();
+        }
       }
     };
 
     initAuth();
   }, []);
+
+  const handleLoginSuccess = (user, token) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    if (user.role === 'admin') {
+      window.history.replaceState({}, '', '/admin');
+      setCurrentRoute('admin');
+    } else {
+      window.history.replaceState({}, '', '/');
+      setCurrentRoute('app');
+      fetchLogs();
+      fetchBabyProfile();
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('FAMILY_AUTH_TOKEN');
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    window.history.replaceState({}, '', '/');
+    setCurrentRoute('app');
+  };
 
   const fetchBabyProfile = async () => {
     try {
@@ -182,17 +228,30 @@ export default function App() {
     }
   };
 
-  const handleSaveBabyProfile = async (birthDate, name) => {
+  const handleSaveBabyProfile = async (profileData, photoFile = null) => {
+    let bodyData;
+    let reqHeaders = getAuthHeaders();
+
+    if (photoFile) {
+      const formData = new FormData();
+      formData.append('profileData', JSON.stringify(profileData));
+      formData.append('photo', photoFile);
+      bodyData = formData;
+    } else {
+      reqHeaders['Content-Type'] = 'application/json';
+      bodyData = JSON.stringify(profileData);
+    }
+
     const res = await fetch('/api/baby-profile', {
       method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ birthDate, name }),
+      headers: reqHeaders,
+      body: bodyData,
     });
     const data = await res.json();
     if (data.success) {
       setBabyProfile(data.profile || null);
     } else {
-      throw new Error(data.error || 'Failed to save birthday');
+      throw new Error(data.error || 'Failed to save baby profile');
     }
   };
 
@@ -360,36 +419,43 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <PasscodeLock onPasscodeSubmit={handlePasscodeSubmit} error={authError} lang={lang} />;
+    return <LoginModal onLoginSuccess={handleLoginSuccess} lang={lang} setLang={setLang} />;
+  }
+
+  // Admin Account: dedicated administration portal only
+  if (currentUser?.role === 'admin') {
+    return (
+      <AdminAccountManager
+        isStandalonePage={true}
+        currentUser={currentUser}
+        getAuthHeaders={getAuthHeaders}
+        onLogout={handleLogout}
+        lang={lang}
+        setLang={setLang}
+      />
+    );
   }
 
   return (
     <div>
-      {/* 1. Top Brand Header Banner (Mobile Optimized) */}
-      <header className="glass-panel" style={{ display: 'flex', alignItems: 'center', marginBottom: '0.55rem', padding: '0.65rem 0.85rem', gap: '0.5rem' }}>
+      {/* 1. Top Brand Header Banner (Logo & Language Toggle) */}
+      <header className="glass-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem', padding: '0.55rem 0.95rem' }}>
         <ReywooLogo size={36} showText={true} />
-        <div style={{ height: '22px', width: '1px', background: 'rgba(255, 255, 255, 0.15)', flexShrink: 0, margin: '0 0.05rem' }} />
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-          <h1 style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            🍼 {t.appTitle}
-          </h1>
-          <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {t.appSubtitle}
-          </p>
-        </div>
+        <LanguageToggle lang={lang} setLang={setLang} />
       </header>
 
-      {/* 2. Preferences & Controls Bar */}
-      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0.55rem 1rem', background: 'rgba(15, 23, 42, 0.55)', borderColor: 'rgba(255, 255, 255, 0.12)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          {babyProfile?.birthDate ? (
+      {/* 2. Preferences, User Info & Controls Bar */}
+      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0.55rem 0.85rem', background: 'rgba(15, 23, 42, 0.55)', borderColor: 'rgba(255, 255, 255, 0.12)', gap: '0.5rem' }}>
+        {/* Left: Baby Profile / Age Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flexShrink: 0 }}>
+          {babyProfile?.birthDate || babyProfile?.nickname || babyProfile?.firstName || babyProfile?.avatarUrl ? (
             <button
               onClick={() => setIsBirthdayModalOpen(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.45rem',
-                padding: '0.4rem 0.85rem',
+                padding: '0.35rem 0.85rem',
                 borderRadius: '20px',
                 background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.18), rgba(139, 92, 246, 0.18))',
                 border: '1px solid rgba(236, 72, 153, 0.4)',
@@ -398,12 +464,24 @@ export default function App() {
                 fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
+                maxWidth: '160px',
               }}
-              title={lang === 'zh' ? '点击修改生日' : 'Click to edit birthday'}
+              title={lang === 'zh' ? '点击修改宝宝档案与生日' : 'Click to edit baby profile & birthday'}
             >
-              <Cake size={16} style={{ color: '#ec4899' }} />
-              <span>{calculateBabyAge(babyProfile.birthDate, lang)}</span>
-              <Pencil size={13} style={{ color: 'var(--text-muted)', marginLeft: '0.15rem' }} />
+              {babyProfile?.avatarUrl ? (
+                <img
+                  src={babyProfile.avatarUrl}
+                  alt="Baby"
+                  style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(236, 72, 153, 0.6)', flexShrink: 0 }}
+                />
+              ) : (
+                <Cake size={16} style={{ color: '#ec4899', flexShrink: 0 }} />
+              )}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                {babyProfile?.nickname || babyProfile?.firstName ? `${babyProfile.nickname || babyProfile.firstName} • ` : ''}
+                {babyProfile?.birthDate ? calculateBabyAge(babyProfile.birthDate, lang) : (lang === 'zh' ? '宝宝档案' : 'Profile')}
+              </span>
+              <Pencil size={13} style={{ color: 'var(--text-muted)', marginLeft: '0.15rem', flexShrink: 0 }} />
             </button>
           ) : (
             <button
@@ -424,13 +502,75 @@ export default function App() {
                 transition: 'all 0.2s ease',
               }}
             >
-              <Cake size={16} />
-              <span>{lang === 'zh' ? '🎂 设置生日' : '🎂 Set Birthday'}</span>
+              <Cake size={16} style={{ flexShrink: 0 }} />
+              <span>{lang === 'zh' ? '🎂 设置宝宝档案' : '🎂 Set Baby Profile'}</span>
             </button>
           )}
         </div>
 
-        <LanguageToggle lang={lang} setLang={setLang} />
+        {/* Middle: Current User Badge (nickname || firstName || displayName || username with truncation) */}
+        {(() => {
+          const userDisplayName = currentUser?.nickname || currentUser?.firstName || currentUser?.displayName || currentUser?.username || 'User';
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.35rem 0.65rem',
+                borderRadius: '16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                fontSize: '0.78rem',
+                color: 'var(--text-main)',
+                fontWeight: 600,
+                maxWidth: '130px',
+                minWidth: 0,
+                flexShrink: 1,
+              }}
+              title={userDisplayName}
+            >
+              {currentUser?.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt="Avatar"
+                  style={{ width: '16px', height: '16px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                />
+              ) : (
+                <User size={14} style={{ color: 'var(--primary-accent)', flexShrink: 0 }} />
+              )}
+              <span style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'inline-block',
+              }}>
+                {userDisplayName}
+              </span>
+            </div>
+          );
+        })()}
+
+        {/* Right: Logout Action */}
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: 'var(--danger)',
+              padding: '0.35rem 0.55rem',
+              borderRadius: '16px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease',
+            }}
+            title={lang === 'zh' ? '退出登录' : 'Logout'}
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Main Tab Content */}
@@ -543,9 +683,10 @@ export default function App() {
         />
       )}
 
-      {/* Baby Birthday Modal */}
+      {/* Baby Profile & Birthday Modal */}
       {isBirthdayModalOpen && (
         <BabyBirthdayModal
+          babyProfile={babyProfile}
           currentBirthDate={babyProfile?.birthDate}
           onSave={handleSaveBabyProfile}
           onClose={() => setIsBirthdayModalOpen(false)}

@@ -7,6 +7,8 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '../data');
 const LOCAL_DB_FILE = path.join(DATA_DIR, 'logs.json');
 
+const ACCOUNTS_DB_FILE = path.join(DATA_DIR, 'accounts.json');
+
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -14,6 +16,57 @@ if (!fs.existsSync(DATA_DIR)) {
 
 if (!fs.existsSync(LOCAL_DB_FILE)) {
   fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify([], null, 2));
+}
+
+if (!fs.existsSync(ACCOUNTS_DB_FILE)) {
+  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify([], null, 2));
+}
+
+/**
+ * Get accounts stored in local JSON fallback
+ */
+export function getFallbackAccounts() {
+  try {
+    const data = fs.readFileSync(ACCOUNTS_DB_FILE, 'utf8');
+    return JSON.parse(data || '[]');
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Save account in local JSON fallback
+ */
+export function saveFallbackAccount(account) {
+  const accounts = getFallbackAccounts();
+  const existingIndex = accounts.findIndex((a) => a.id === account.id || a.username === account.username);
+  if (existingIndex >= 0) {
+    accounts[existingIndex] = { ...accounts[existingIndex], ...account };
+  } else {
+    accounts.push(account);
+  }
+  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify(accounts, null, 2));
+  return account;
+}
+
+/**
+ * Update password for an account in local JSON fallback
+ */
+export async function updateFallbackAccountPassword(id, newPassword) {
+  const accounts = getFallbackAccounts();
+  const index = accounts.findIndex(a => a.id === id);
+  if (index === -1) {
+    throw new Error('Account not found');
+  }
+  if (accounts[index].auth_provider === 'google' || accounts[index].authProvider === 'google') {
+    throw new Error('Cannot change password for Google accounts');
+  }
+  const { hashPassword } = await import('./authService.js');
+  const passwordHash = await hashPassword(newPassword);
+  accounts[index].password_hash = passwordHash;
+  accounts[index].updated_at = new Date().toISOString();
+  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify(accounts, null, 2));
+  return accounts[index];
 }
 
 /**
@@ -228,14 +281,27 @@ export async function finishFallbackFormulaBottle(id) {
   return true;
 }
 
-const LOCAL_BABY_PROFILE_FILE = path.join(DATA_DIR, 'baby_profile.json');
+function getBabyProfileFile(accountId = null) {
+  if (accountId) {
+    return path.join(DATA_DIR, `baby_profile_${accountId}.json`);
+  }
+  return path.join(DATA_DIR, 'baby_profile.json');
+}
 
-export async function getFallbackBabyProfile() {
+export async function getFallbackBabyProfile(accountId = null) {
   try {
-    if (!fs.existsSync(LOCAL_BABY_PROFILE_FILE)) {
+    const file = getBabyProfileFile(accountId);
+    if (!fs.existsSync(file)) {
+      if (accountId && fs.existsSync(path.join(DATA_DIR, 'baby_profile.json'))) {
+        // Only return default if account matches default
+        if (accountId === 'account_default_yoyo') {
+          const defaultData = fs.readFileSync(path.join(DATA_DIR, 'baby_profile.json'), 'utf8');
+          return JSON.parse(defaultData || 'null');
+        }
+      }
       return null;
     }
-    const data = fs.readFileSync(LOCAL_BABY_PROFILE_FILE, 'utf8');
+    const data = fs.readFileSync(file, 'utf8');
     return JSON.parse(data || 'null');
   } catch (err) {
     console.error('Error reading local baby profile:', err);
@@ -243,20 +309,35 @@ export async function getFallbackBabyProfile() {
   }
 }
 
-export async function saveFallbackBabyProfile(birthDate, name = 'Baby') {
-  if (!birthDate) {
-    if (fs.existsSync(LOCAL_BABY_PROFILE_FILE)) {
-      fs.unlinkSync(LOCAL_BABY_PROFILE_FILE);
+export async function saveFallbackBabyProfile(profileData = {}, accountId = null) {
+  const file = getBabyProfileFile(accountId);
+  const birthDate = typeof profileData === 'string' ? profileData : (profileData?.birthDate || null);
+  const firstName = typeof profileData === 'object' ? profileData?.firstName : null;
+  const lastName = typeof profileData === 'object' ? profileData?.lastName : null;
+  const nickname = typeof profileData === 'object' ? profileData?.nickname : null;
+  const gender = typeof profileData === 'object' ? profileData?.gender : null;
+  const avatarUrl = typeof profileData === 'object' ? profileData?.avatarUrl : null;
+  const name = nickname || firstName || (typeof profileData === 'object' ? profileData?.name : null) || 'Baby';
+
+  if (!birthDate && !firstName && !lastName && !nickname && !gender && !avatarUrl) {
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
     }
     return null;
   }
   const profile = {
-    id: 'default_baby',
+    id: accountId ? `baby_${accountId}` : 'default_baby',
+    accountId,
     name,
+    firstName,
+    lastName,
+    nickname,
+    gender,
+    avatarUrl,
     birthDate,
     updatedAt: new Date().toISOString(),
   };
-  fs.writeFileSync(LOCAL_BABY_PROFILE_FILE, JSON.stringify(profile, null, 2));
+  fs.writeFileSync(file, JSON.stringify(profile, null, 2));
   return profile;
 }
 

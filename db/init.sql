@@ -1,8 +1,23 @@
 -- Family Assistant Database Schema
 -- Auto-executed on PostgreSQL container startup via /docker-entrypoint-initdb.d/init.sql
 
+CREATE TABLE IF NOT EXISTS accounts (
+    id VARCHAR(64) PRIMARY KEY,
+    username VARCHAR(100) UNIQUE,
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    auth_provider VARCHAR(20) NOT NULL DEFAULT 'local',
+    google_id VARCHAR(255) UNIQUE,
+    display_name VARCHAR(100),
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS action_logs (
     id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
     category VARCHAR(50) NOT NULL,
     sub_category VARCHAR(50) NOT NULL DEFAULT 'other',
     start_time TIMESTAMPTZ NOT NULL,
@@ -16,6 +31,8 @@ CREATE TABLE IF NOT EXISTS action_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS action_attachments (
     id SERIAL PRIMARY KEY,
@@ -31,6 +48,7 @@ CREATE TABLE IF NOT EXISTS action_attachments (
 -- Indexes for performance optimization
 CREATE INDEX IF NOT EXISTS idx_action_logs_start_time ON action_logs(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_action_logs_category ON action_logs(category, sub_category);
+CREATE INDEX IF NOT EXISTS idx_action_logs_account_id ON action_logs(account_id);
 CREATE INDEX IF NOT EXISTS idx_action_attachments_action_id ON action_attachments(action_id);
 
 -- Function and trigger to update updated_at timestamp automatically
@@ -50,6 +68,7 @@ EXECUTE FUNCTION update_timestamp_column();
 
 CREATE TABLE IF NOT EXISTS feeding_timers (
     id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'idle',
     session_type VARCHAR(20) NOT NULL DEFAULT 'feeding',
     start_time TIMESTAMPTZ,
@@ -57,20 +76,37 @@ CREATE TABLE IF NOT EXISTS feeding_timers (
     expires_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS opened_formula_bottles (
     id VARCHAR(64) PRIMARY KEY,
+    account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
     bottle_type VARCHAR(20) NOT NULL,
     opened_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE opened_formula_bottles ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS baby_profile (
     id VARCHAR(64) PRIMARY KEY DEFAULT 'default_baby',
+    account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
     name VARCHAR(100) DEFAULT 'Baby',
-    birth_date DATE NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    nickname VARCHAR(100),
+    gender VARCHAR(20),
+    avatar_url TEXT,
+    birth_date DATE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
+ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE baby_profile ALTER COLUMN birth_date DROP NOT NULL;
+
 

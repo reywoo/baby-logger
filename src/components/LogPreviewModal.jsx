@@ -234,8 +234,8 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           const headers = { 'Content-Type': 'application/json' };
           const apiKey = localStorage.getItem('GEMINI_API_KEY');
           if (apiKey) headers['x-gemini-api-key'] = apiKey;
-          const passcode = localStorage.getItem('APP_PASSCODE');
-          if (passcode) headers['x-app-passcode'] = passcode;
+          const token = localStorage.getItem('FAMILY_AUTH_TOKEN');
+          if (token) headers['Authorization'] = `Bearer ${token}`;
 
           const res = await fetch('/api/validate-log', {
             method: 'POST',

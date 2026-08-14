@@ -147,9 +147,9 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
       if (apiKey) {
         headers['x-gemini-api-key'] = apiKey;
       }
-      const passcode = localStorage.getItem('APP_PASSCODE');
-      if (passcode) {
-        headers['x-app-passcode'] = passcode;
+      const token = localStorage.getItem('FAMILY_AUTH_TOKEN');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
 
       const response = await fetch('/api/process-audio', {

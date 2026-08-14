@@ -66,14 +66,43 @@ function extractJsonObject(text) {
   return JSON.parse(cleanJson);
 }
 
+function formatBabyProfileContext(babyProfile) {
+  if (!babyProfile || typeof babyProfile !== 'object') return '';
+  const names = [
+    babyProfile.nickname,
+    babyProfile.firstName,
+    babyProfile.name !== 'Baby' ? babyProfile.name : null,
+    babyProfile.lastName && babyProfile.firstName ? `${babyProfile.firstName} ${babyProfile.lastName}` : null,
+    babyProfile.lastName && babyProfile.firstName ? `${babyProfile.lastName}${babyProfile.firstName}` : null,
+  ].filter(Boolean);
+  
+  const uniqueNames = [...new Set(names)];
+  const nameDesc = uniqueNames.length > 0 ? uniqueNames.map(n => `"${n}"`).join(', ') : '"Baby" / "宝宝"';
+  const genderDesc = babyProfile.gender === 'boy' ? 'Boy (男宝)' : babyProfile.gender === 'girl' ? 'Girl (女宝)' : (babyProfile.gender || 'Not specified');
+  const birthDateDesc = babyProfile.birthDate || 'Not set';
+
+  return `
+BABY PROFILE CONTEXT:
+- Baby's Name / Nickname(s): ${nameDesc}
+- Gender: ${genderDesc}
+- Birth Date: ${birthDateDesc}
+- IMPORTANT NAME UNDERSTANDING:
+  * When the speaker mentions any of the baby's names (${nameDesc}), nicknames, pronouns ("he", "she", "him", "her", "他", "她"), or general terms ("baby", "宝宝", "小宝", "崽崽", "儿子", "女儿", "妹妹", "弟弟"), they are referring to this baby.
+  * If no name is mentioned at all (e.g. "换了尿布", "drank 120ml milk", "睡觉了"), it also pertains to this baby by default.
+`;
+}
+
 /**
  * Service to process multimodal audio input or natural text with Gemini
  */
-export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null, hasBirthDate = true) {
+export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null, babyProfile = null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
   }
+
+  const hasBirthDate = typeof babyProfile === 'boolean' ? babyProfile : !!(babyProfile && babyProfile.birthDate);
+  const babyContext = formatBabyProfileContext(babyProfile);
 
   const ai = new GoogleGenAI({ apiKey });
   const base64Audio = audioBuffer.toString('base64');
@@ -86,7 +115,7 @@ export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, 
 
   const prompt = `You are a helpful family assistant & baby activity logger. Current ISO time is: ${currentIso}.
 Listen carefully to the audio clip provided. The speaker may be using Chinese (Mandarin), English, or a mix of both.
-
+${babyContext}
 Extract and structure the activity log into a clean JSON object.
 Follow these guidelines strictly:
 0. CRITICAL SINGLE EVENT RULE: Each audio recording MUST produce exactly ONE single log entry. If the speaker mentions multiple actions, events, or categories in one recording (for example: "changed diaper and baby drank 120ml milk and went to sleep"), ONLY extract and parse the FIRST clearly identifiable action and ignore all subsequent actions. Do NOT attempt to output multiple records or combine multiple events.
@@ -114,7 +143,7 @@ Return ONLY a valid JSON object matching this exact structure:
   "summaryEn": "English description of the log entry",
   "originalZh": "Chinese transcript or equivalent description",
   "notes": "Additional details or null"
-}`;
+} `;
 
   try {
     const contents = [
@@ -146,11 +175,14 @@ Return ONLY a valid JSON object matching this exact structure:
 /**
  * Process text prompt fallback with Gemini
  */
-export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null, hasBirthDate = true) {
+export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null, babyProfile = null) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
   }
+
+  const hasBirthDate = typeof babyProfile === 'boolean' ? babyProfile : !!(babyProfile && babyProfile.birthDate);
+  const babyContext = formatBabyProfileContext(babyProfile);
 
   const ai = new GoogleGenAI({ apiKey });
   const currentIso = new Date().toISOString();
@@ -160,6 +192,7 @@ export async function processTextWithGemini(textInput, userApiKey, subCategories
     : '"feeding", "sleep", "diaper", "health", "activity", or "other" (NOTE: "growth" is DISABLED because baby birthday is not set)';
 
   const prompt = `You are a family assistant & baby log parser. Current ISO time is: ${currentIso}.
+${babyContext}
 Parse this user log entry: "${textInput}". The text may be in Chinese, English, or mixed.
 
 Extract timing & category details:

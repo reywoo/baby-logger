@@ -97,6 +97,8 @@ function calculateEndTimeFromDuration(startIso, durationStr) {
   return new Date(start.getTime() + minutes * 60 * 1000).toISOString();
 }
 
+import { hashPassword } from './authService.js';
+
 /**
  * Initialize Database tables if not existing
  */
@@ -105,8 +107,23 @@ export async function initDb() {
     const client = await getPoolClient();
     try {
       await client.query(`
+        CREATE TABLE IF NOT EXISTS accounts (
+            id VARCHAR(64) PRIMARY KEY,
+            username VARCHAR(100) UNIQUE,
+            email VARCHAR(255) UNIQUE,
+            password_hash VARCHAR(255),
+            role VARCHAR(20) NOT NULL DEFAULT 'user',
+            auth_provider VARCHAR(20) NOT NULL DEFAULT 'local',
+            google_id VARCHAR(255) UNIQUE,
+            display_name VARCHAR(100),
+            avatar_url TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS action_logs (
             id VARCHAR(64) PRIMARY KEY,
+            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
             category VARCHAR(50) NOT NULL,
             sub_category VARCHAR(50) NOT NULL DEFAULT 'other',
             start_time TIMESTAMPTZ NOT NULL,
@@ -120,6 +137,7 @@ export async function initDb() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
         CREATE TABLE IF NOT EXISTS action_attachments (
             id SERIAL PRIMARY KEY,
@@ -134,6 +152,7 @@ export async function initDb() {
 
         CREATE TABLE IF NOT EXISTS feeding_timers (
             id VARCHAR(64) PRIMARY KEY,
+            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'idle',
             session_type VARCHAR(20) NOT NULL DEFAULT 'feeding',
             start_time TIMESTAMPTZ,
@@ -141,28 +160,84 @@ export async function initDb() {
             expires_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
         ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) NOT NULL DEFAULT 'feeding';
 
         CREATE TABLE IF NOT EXISTS opened_formula_bottles (
             id VARCHAR(64) PRIMARY KEY,
+            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
             bottle_type VARCHAR(20) NOT NULL,
             opened_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE opened_formula_bottles ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
         CREATE TABLE IF NOT EXISTS baby_profile (
             id VARCHAR(64) PRIMARY KEY DEFAULT 'default_baby',
+            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
             name VARCHAR(100) DEFAULT 'Baby',
-            birth_date DATE NOT NULL,
+            first_name VARCHAR(100),
+            last_name VARCHAR(100),
+            nickname VARCHAR(100),
+            gender VARCHAR(20),
+            avatar_url TEXT,
+            birth_date DATE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
+        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+        ALTER TABLE baby_profile ALTER COLUMN birth_date DROP NOT NULL;
 
         CREATE INDEX IF NOT EXISTS idx_action_logs_start_time ON action_logs(start_time DESC);
         CREATE INDEX IF NOT EXISTS idx_action_logs_category ON action_logs(category, sub_category);
+        CREATE INDEX IF NOT EXISTS idx_action_logs_account_id ON action_logs(account_id);
         CREATE INDEX IF NOT EXISTS idx_action_attachments_action_id ON action_attachments(action_id);
       `);
+
+      // 1. Seed or Update Default Admin Account (admin / 5629672Wr)
+      const adminCheck = await client.query(`SELECT id FROM accounts WHERE username = 'admin' OR id = 'account_admin'`);
+      if (adminCheck.rows.length === 0) {
+        const hashedAdminPassword = await hashPassword('5629672Wr');
+        await client.query(`
+          INSERT INTO accounts (id, username, email, password_hash, role, auth_provider, display_name)
+          VALUES ('account_admin', 'admin', 'admin@family.local', $1, 'admin', 'local', 'admin')
+          ON CONFLICT (id) DO NOTHING
+        `, [hashedAdminPassword]);
+        console.log('Default admin account "admin" seeded successfully.');
+      } else {
+        // Ensure role is admin
+        await client.query(`UPDATE accounts SET role = 'admin' WHERE username = 'admin' OR id = 'account_admin'`);
+      }
+
+      // 2. Seed or Update Regular Account (yoyo / Iambia21@) with role 'user'
+      const yoyoCheck = await client.query(`SELECT id FROM accounts WHERE username = 'yoyo' OR id = 'account_default_yoyo'`);
+      let yoyoAccountId = 'account_default_yoyo';
+      if (yoyoCheck.rows.length === 0) {
+        const hashedYoyoPassword = await hashPassword('Iambia21@');
+        await client.query(`
+          INSERT INTO accounts (id, username, email, password_hash, role, auth_provider, display_name)
+          VALUES ($1, 'yoyo', 'yoyo@family.local', $2, 'user', 'local', 'yoyo')
+          ON CONFLICT (id) DO NOTHING
+        `, [yoyoAccountId, hashedYoyoPassword]);
+        console.log('Default user account "yoyo" seeded successfully.');
+      } else {
+        yoyoAccountId = yoyoCheck.rows[0].id;
+        // Ensure yoyo is role 'user' (not admin)
+        await client.query(`UPDATE accounts SET role = 'user' WHERE id = $1 OR username = 'yoyo'`, [yoyoAccountId]);
+      }
+
+      // Backfill any existing data that doesn't have an account_id to yoyo's account
+      await client.query(`UPDATE action_logs SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
+      await client.query(`UPDATE feeding_timers SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
+      await client.query(`UPDATE opened_formula_bottles SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
+      await client.query(`UPDATE baby_profile SET account_id = $1 WHERE account_id IS NULL`, [yoyoAccountId]);
+
       console.log('PostgreSQL Database schema initialized successfully.');
     } finally {
       client.release();
@@ -197,7 +272,10 @@ export async function getExistingSubCategories() {
  * Get all logs with photo attachments from PostgreSQL database
  */
 
-export async function getDbLogs() {
+export async function getDbLogs(accountId = null) {
+  const whereClause = accountId ? 'WHERE l.account_id = $1' : '';
+  const queryParams = accountId ? [accountId] : [];
+
   const query = `
     SELECT 
       l.id,
@@ -228,11 +306,12 @@ export async function getDbLogs() {
       ) AS attachments
     FROM action_logs l
     LEFT JOIN action_attachments a ON l.id = a.action_id
+    ${whereClause}
     GROUP BY l.id
     ORDER BY l.start_time DESC, l.recorded_at DESC;
   `;
 
-  const res = await queryDb(query);
+  const res = await queryDb(query, queryParams);
   return res.rows.map((row) => {
     let dur = row.duration || '';
     if (!dur && row.startTime && row.endTime && row.startTime !== row.endTime) {
@@ -251,9 +330,14 @@ export async function getDbLogs() {
 /**
  * Get filtered logs by start/end date and category
  */
-export async function getDbLogsFiltered({ startDate, endDate, category } = {}) {
+export async function getDbLogsFiltered({ accountId = null, startDate, endDate, category } = {}) {
   const whereConditions = [];
   const queryParams = [];
+
+  if (accountId) {
+    queryParams.push(accountId);
+    whereConditions.push(`l.account_id = $${queryParams.length}`);
+  }
 
   if (startDate) {
     queryParams.push(new Date(startDate).toISOString());
@@ -327,7 +411,7 @@ export async function getDbLogsFiltered({ startDate, endDate, category } = {}) {
 /**
  * Save log entry to PostgreSQL database
  */
-export async function saveDbLogEntry(logData, attachments = []) {
+export async function saveDbLogEntry(logData, attachments = [], accountId = null) {
   const client = await getPoolClient();
   try {
     await client.query('BEGIN');
@@ -367,14 +451,14 @@ export async function saveDbLogEntry(logData, attachments = []) {
     const insertLogQuery = `
       INSERT INTO action_logs (
         id, category, sub_category, start_time, end_time, recorded_at,
-        amount, duration, summary_en, original_zh, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        amount, duration, summary_en, original_zh, notes, account_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *;
     `;
 
     await client.query(insertLogQuery, [
       id, category, subCategory, startTime, endTime, recordedAt,
-      amount, duration, summaryEn, originalZh, notes,
+      amount, duration, summaryEn, originalZh, notes, accountId || 'account_default_yoyo',
     ]);
 
     const savedAttachments = [];
@@ -433,7 +517,7 @@ export async function saveDbLogEntry(logData, attachments = []) {
 /**
  * Update an existing log entry in PostgreSQL database
  */
-export async function updateDbLogEntry(id, logData, newAttachments = [], removedAttachmentIds = []) {
+export async function updateDbLogEntry(id, logData, newAttachments = [], removedAttachmentIds = [], accountId = null) {
   const client = await getPoolClient();
   try {
     await client.query('BEGIN');
@@ -460,7 +544,6 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
       duration = '';
     }
 
-
     const amount = logData.amount || '';
     const summaryEn = logData.summaryEn || '';
     const originalZh = logData.originalZh || '';
@@ -478,17 +561,17 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
           original_zh = $8,
           notes = $9,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10
+      WHERE id = $10 AND ($11::text IS NULL OR account_id = $11)
       RETURNING *;
     `;
 
     const res = await client.query(updateLogQuery, [
       category, subCategory, startTime, endTime,
-      amount, duration, summaryEn, originalZh, notes, id
+      amount, duration, summaryEn, originalZh, notes, id, accountId
     ]);
 
     if (res.rows.length === 0) {
-      throw new Error(`Log entry not found: ${id}`);
+      throw new Error(`Log entry not found or unauthorized: ${id}`);
     }
 
     // Handle removed attachments
@@ -567,11 +650,10 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
   }
 }
 
-
 /**
  * Delete log entry and linked files from PostgreSQL database
  */
-export async function deleteDbLogEntry(id) {
+export async function deleteDbLogEntry(id, accountId = null) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -589,7 +671,7 @@ export async function deleteDbLogEntry(id) {
     }
 
     // Delete log (cascades to action_attachments table)
-    await client.query('DELETE FROM action_logs WHERE id = $1', [id]);
+    await client.query('DELETE FROM action_logs WHERE id = $1 AND ($2::text IS NULL OR account_id = $2)', [id, accountId]);
     await client.query('COMMIT');
     return true;
   } catch (err) {
@@ -603,25 +685,31 @@ export async function deleteDbLogEntry(id) {
 /**
  * Get current timers state from PostgreSQL DB
  */
-export async function getDbTimersState() {
+export async function getDbTimersState(accountId = null) {
+  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
   const now = new Date();
 
   // 1. Feeding / Sleeping Session state
-  const sessionRes = await queryDb("SELECT id, status, session_type AS \"sessionType\", start_time AS \"startTime\", end_time AS \"endTime\", expires_at AS \"expiresAt\" FROM feeding_timers WHERE id = 'active_session'");
-  let feedingSession = sessionRes.rows[0] || { id: 'active_session', status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
+  const sessionRes = await queryDb(
+    `SELECT id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt" 
+     FROM feeding_timers 
+     WHERE id = $1 OR ($2::text IS NOT NULL AND account_id = $2)
+     ORDER BY updated_at DESC LIMIT 1`,
+    [sessionId, accountId]
+  );
+  let feedingSession = sessionRes.rows[0] || { id: sessionId, status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
   if (!feedingSession.sessionType) feedingSession.sessionType = 'feeding';
 
   // Check if session in 'active' state has expired (>1hr)
   if (feedingSession.status === 'active' && feedingSession.expiresAt) {
     const expiresAtDate = new Date(feedingSession.expiresAt);
     if (now >= expiresAtDate) {
-      // Transition automatically to 'ended' with reason 'expired'
       const updateRes = await queryDb(
         `UPDATE feeding_timers 
          SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = 'active_session' 
+         WHERE id = $2 
          RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-        [feedingSession.expiresAt]
+        [feedingSession.expiresAt, feedingSession.id]
       );
       feedingSession = updateRes.rows[0];
       feedingSession.reason = 'expired';
@@ -632,7 +720,9 @@ export async function getDbTimersState() {
   const bottlesRes = await queryDb(
     `SELECT id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"
      FROM opened_formula_bottles
-     ORDER BY created_at DESC`
+     ${accountId ? 'WHERE account_id = $1' : ''}
+     ORDER BY created_at DESC`,
+    accountId ? [accountId] : []
   );
 
   return {
@@ -644,17 +734,18 @@ export async function getDbTimersState() {
 /**
  * Start a feeding or sleeping session in PostgreSQL DB
  */
-export async function startDbFeedingSession(sessionType = 'feeding') {
+export async function startDbFeedingSession(sessionType = 'feeding', accountId = null) {
+  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
   const now = new Date();
-  const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000) : null; // 1 hour for feeding, null for sleep
+  const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000) : null;
 
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, status, session_type, start_time, end_time, expires_at, updated_at)
-     VALUES ('active_session', 'active', $1, $2, NULL, $3, CURRENT_TIMESTAMP)
+    `INSERT INTO feeding_timers (id, account_id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ($1, $2, 'active', $3, $4, NULL, $5, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE 
-     SET status = 'active', session_type = $1, start_time = $2, end_time = NULL, expires_at = $3, updated_at = CURRENT_TIMESTAMP
+     SET status = 'active', session_type = $3, start_time = $4, end_time = NULL, expires_at = $5, account_id = COALESCE(EXCLUDED.account_id, feeding_timers.account_id), updated_at = CURRENT_TIMESTAMP
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
+    [sessionId, accountId, sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
   );
 
   return res.rows[0];
@@ -663,30 +754,33 @@ export async function startDbFeedingSession(sessionType = 'feeding') {
 /**
  * Stop an active feeding/sleeping session in PostgreSQL DB
  */
-export async function stopDbFeedingSession() {
+export async function stopDbFeedingSession(accountId = null) {
+  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
   const now = new Date();
 
   const res = await queryDb(
     `UPDATE feeding_timers 
      SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
-     WHERE id = 'active_session' 
+     WHERE id = $2 OR ($3::text IS NOT NULL AND account_id = $3)
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [now.toISOString()]
+    [now.toISOString(), sessionId, accountId]
   );
 
-  return res.rows[0] || { id: 'active_session', status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };
+  return res.rows[0] || { id: sessionId, status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };
 }
 
 /**
  * Reset feeding/sleeping session to IDLE in PostgreSQL DB
  */
-export async function resetDbFeedingSession() {
+export async function resetDbFeedingSession(accountId = null) {
+  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, status, session_type, start_time, end_time, expires_at, updated_at)
-     VALUES ('active_session', 'idle', 'feeding', NULL, NULL, NULL, CURRENT_TIMESTAMP)
+    `INSERT INTO feeding_timers (id, account_id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ($1, $2, 'idle', 'feeding', NULL, NULL, NULL, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE 
      SET status = 'idle', session_type = 'feeding', start_time = NULL, end_time = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
-     RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`
+     RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
+    [sessionId, accountId]
   );
 
   return res.rows[0];
@@ -695,9 +789,11 @@ export async function resetDbFeedingSession() {
 /**
  * Open a Ready-To-Feed formula bottle in PostgreSQL DB
  */
-export async function openDbFormulaBottle(bottleType) {
-  // Check count of active opened bottles (max 5)
-  const countRes = await queryDb('SELECT COUNT(*) FROM opened_formula_bottles');
+export async function openDbFormulaBottle(bottleType, accountId = null) {
+  const countRes = await queryDb(
+    `SELECT COUNT(*) FROM opened_formula_bottles ${accountId ? 'WHERE account_id = $1' : ''}`,
+    accountId ? [accountId] : []
+  );
   const count = parseInt(countRes.rows[0].count, 10);
   if (count >= 5) {
     throw new Error('Maximum limit of 5 opened bottles reached.');
@@ -709,10 +805,10 @@ export async function openDbFormulaBottle(bottleType) {
   const id = 'rtf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
   const res = await queryDb(
-    `INSERT INTO opened_formula_bottles (id, bottle_type, opened_at, expires_at, created_at)
-     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+    `INSERT INTO opened_formula_bottles (id, account_id, bottle_type, opened_at, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
      RETURNING id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"`,
-    [id, bottleType, now.toISOString(), expiresAt.toISOString()]
+    [id, accountId, bottleType, now.toISOString(), expiresAt.toISOString()]
   );
 
   return res.rows[0];
@@ -721,41 +817,179 @@ export async function openDbFormulaBottle(bottleType) {
 /**
  * Finish/discard an opened Ready-To-Feed bottle in PostgreSQL DB
  */
-export async function finishDbFormulaBottle(id) {
-  await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1', [id]);
+export async function finishDbFormulaBottle(id, accountId = null) {
+  if (accountId) {
+    await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1 AND (account_id = $2 OR account_id IS NULL)', [id, accountId]);
+  } else {
+    await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1', [id]);
+  }
   return true;
 }
 
 /**
- * Get Baby Profile from PostgreSQL DB
+ * Get Baby Profile from PostgreSQL DB (Scoped by accountId)
  */
-export async function getDbBabyProfile() {
-  const res = await queryDb(
-    `SELECT id, name, TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", updated_at AS "updatedAt"
-     FROM baby_profile
-     WHERE id = 'default_baby' LIMIT 1`
-  );
+export async function getDbBabyProfile(accountId = null) {
+  const query = accountId
+    ? `SELECT 
+         id, 
+         name, 
+         first_name AS "firstName", 
+         last_name AS "lastName", 
+         nickname, 
+         gender, 
+         avatar_url AS "avatarUrl", 
+         TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
+         updated_at AS "updatedAt"
+       FROM baby_profile
+       WHERE account_id = $1
+       LIMIT 1`
+    : `SELECT 
+         id, 
+         name, 
+         first_name AS "firstName", 
+         last_name AS "lastName", 
+         nickname, 
+         gender, 
+         avatar_url AS "avatarUrl", 
+         TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
+         updated_at AS "updatedAt"
+       FROM baby_profile
+       WHERE id = 'default_baby'
+       LIMIT 1`;
+  const params = accountId ? [accountId] : [];
+  const res = await queryDb(query, params);
   return res.rows[0] || null;
 }
 
 /**
- * Save / Update Baby Profile in PostgreSQL DB
+ * Save / Update Baby Profile in PostgreSQL DB (Scoped by accountId)
  */
-export async function saveDbBabyProfile(birthDate, name = 'Baby') {
-  if (!birthDate) {
-    await queryDb(`DELETE FROM baby_profile WHERE id = 'default_baby'`);
+export async function saveDbBabyProfile(profileData = {}, accountId = null) {
+  const birthDate = profileData.birthDate || null;
+  const firstName = profileData.firstName?.trim() || null;
+  const lastName = profileData.lastName?.trim() || null;
+  const nickname = profileData.nickname?.trim() || null;
+  const gender = profileData.gender || null;
+  const avatarUrl = profileData.avatarUrl || null;
+  const name = nickname || firstName || profileData.name || 'Baby';
+  const recordId = accountId ? `baby_${accountId}` : 'default_baby';
+
+  // If entirely empty/cleared
+  if (!birthDate && !firstName && !lastName && !nickname && !gender && !avatarUrl) {
+    if (accountId) {
+      await queryDb(`DELETE FROM baby_profile WHERE account_id = $1 OR id = $2`, [accountId, recordId]);
+    } else {
+      await queryDb(`DELETE FROM baby_profile WHERE id = 'default_baby'`);
+    }
     return null;
   }
+
   const res = await queryDb(
-    `INSERT INTO baby_profile (id, name, birth_date, updated_at)
-     VALUES ('default_baby', $1, $2, CURRENT_TIMESTAMP)
+    `INSERT INTO baby_profile (id, name, first_name, last_name, nickname, gender, avatar_url, birth_date, account_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE
-     SET name = EXCLUDED.name, birth_date = EXCLUDED.birth_date, updated_at = CURRENT_TIMESTAMP
-     RETURNING id, name, TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", updated_at AS "updatedAt"`,
-    [name, birthDate]
+     SET name = EXCLUDED.name,
+         first_name = EXCLUDED.first_name,
+         last_name = EXCLUDED.last_name,
+         nickname = EXCLUDED.nickname,
+         gender = EXCLUDED.gender,
+         avatar_url = COALESCE(EXCLUDED.avatar_url, baby_profile.avatar_url),
+         birth_date = EXCLUDED.birth_date,
+         account_id = COALESCE(EXCLUDED.account_id, baby_profile.account_id),
+         updated_at = CURRENT_TIMESTAMP
+     RETURNING 
+       id, 
+       name, 
+       first_name AS "firstName", 
+       last_name AS "lastName", 
+       nickname, 
+       gender, 
+       avatar_url AS "avatarUrl", 
+       TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
+       updated_at AS "updatedAt"`,
+    [recordId, name, firstName, lastName, nickname, gender, avatarUrl, birthDate, accountId]
   );
   return res.rows[0];
 }
 
+// ==========================================
+// ACCOUNTS DATABASE OPERATIONS
+// ==========================================
+
+export async function getDbAccountByUsername(username) {
+  if (!username) return null;
+  const res = await queryDb('SELECT * FROM accounts WHERE LOWER(username) = LOWER($1)', [username.trim()]);
+  return res.rows[0] || null;
+}
+
+export async function getDbAccountByEmail(email) {
+  if (!email) return null;
+  const res = await queryDb('SELECT * FROM accounts WHERE LOWER(email) = LOWER($1)', [email.trim()]);
+  return res.rows[0] || null;
+}
+
+export async function getDbAccountByGoogleId(googleId) {
+  if (!googleId) return null;
+  const res = await queryDb('SELECT * FROM accounts WHERE google_id = $1', [googleId]);
+  return res.rows[0] || null;
+}
+
+export async function getDbAccountById(id) {
+  if (!id) return null;
+  const res = await queryDb('SELECT id, username, email, role, auth_provider AS "authProvider", google_id AS "googleId", display_name AS "displayName", avatar_url AS "avatarUrl", created_at AS "createdAt" FROM accounts WHERE id = $1', [id]);
+  return res.rows[0] || null;
+}
+
+export async function createDbAccount({ username, email, password, role = 'user', authProvider = 'local', googleId = null, displayName = null, avatarUrl = null }) {
+  const id = 'acc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+  const passwordHash = password ? await hashPassword(password) : null;
+  const name = displayName || username || (email ? email.split('@')[0] : 'User');
+
+  const res = await queryDb(`
+    INSERT INTO accounts (id, username, email, password_hash, role, auth_provider, google_id, display_name, avatar_url)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id, username, email, role, auth_provider AS "authProvider", display_name AS "displayName", avatar_url AS "avatarUrl", created_at AS "createdAt"
+  `, [id, username || null, email || null, passwordHash, role, authProvider, googleId, name, avatarUrl]);
+
+  return res.rows[0];
+}
+
+export async function getAllDbAccounts() {
+  const res = await queryDb(`
+    SELECT id, username, email, role, auth_provider AS "authProvider", google_id AS "googleId", display_name AS "displayName", avatar_url AS "avatarUrl", created_at AS "createdAt"
+    FROM accounts
+    ORDER BY created_at ASC
+  `);
+  return res.rows;
+}
+
+export async function deleteDbAccount(id) {
+  await queryDb('DELETE FROM accounts WHERE id = $1', [id]);
+  return true;
+}
+
+export async function countDbGoogleAccounts() {
+  const res = await queryDb(`SELECT COUNT(*) FROM accounts WHERE auth_provider = 'google' OR google_id IS NOT NULL`);
+  return parseInt(res.rows[0].count, 10);
+}
+
+export async function updateDbAccountPassword(id, newPassword) {
+  const passwordHash = await hashPassword(newPassword);
+  const res = await queryDb(`
+    UPDATE accounts
+    SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $2 AND (auth_provider = 'local' OR auth_provider IS NULL)
+    RETURNING id, username, email, role, auth_provider AS "authProvider"
+  `, [passwordHash, id]);
+
+  if (res.rows.length === 0) {
+    throw new Error('Account not found or is a Google account.');
+  }
+
+  return res.rows[0];
+}
+
 export default pool;
+
 

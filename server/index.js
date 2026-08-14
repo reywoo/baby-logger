@@ -9,12 +9,14 @@ import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWith
 import { 
   getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry,
   getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle,
-  getFallbackBabyProfile, saveFallbackBabyProfile
+  getFallbackBabyProfile, saveFallbackBabyProfile,
+  getFallbackAccounts, saveFallbackAccount, updateFallbackAccountPassword
 } from './localJsonService.js';
 import { 
   initDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry,
   getDbTimersState, startDbFeedingSession, stopDbFeedingSession, resetDbFeedingSession, openDbFormulaBottle, finishDbFormulaBottle,
-  getDbBabyProfile, saveDbBabyProfile
+  getDbBabyProfile, saveDbBabyProfile,
+  getDbAccountByUsername, getDbAccountByEmail, getDbAccountByGoogleId, getDbAccountById, createDbAccount, getAllDbAccounts, deleteDbAccount, countDbGoogleAccounts, updateDbAccountPassword
 } from './db.js';
 
 
@@ -63,24 +65,355 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // Initialize PostgreSQL DB asynchronously on server start
 initDb().catch((err) => console.warn('DB init warning:', err.message));
 
-// Passcode authentication middleware for /api/* endpoints
-app.use('/api', (req, res, next) => {
-  const expectedPasscode = process.env.APP_PASSCODE;
-  if (!expectedPasscode) {
-    return next();
-  }
+import { 
+  hashPassword, comparePassword, generateToken, verifyToken, verifyGoogleToken, authenticateToken, requireAdmin 
+} from './authService.js';
 
-  const providedPasscode = req.headers['x-app-passcode'] || req.query.passcode;
-  if (providedPasscode && providedPasscode === expectedPasscode) {
-    return next();
-  }
+// Public Auth Endpoints (No Token Required)
 
-  return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing passcode' });
+function getMaxGoogleAccounts() {
+  const val = parseInt(process.env.MAX_GOOGLE_ACCOUNTS, 10);
+  return Number.isFinite(val) && val > 0 ? val : 10;
+}
+
+// 0. Public Auth Config (Google Client ID, etc.)
+app.get('/api/auth/config', (req, res) => {
+  res.json({
+    success: true,
+    googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '',
+    maxGoogleAccounts: getMaxGoogleAccounts(),
+  });
 });
 
-// Auth Verification Endpoint
-app.get('/api/auth/verify', (req, res) => {
-  res.json({ success: true, authenticated: true });
+// 1. Password Login Endpoint
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required' });
+    }
+
+    let account = null;
+    try {
+      account = await getDbAccountByUsername(username);
+    } catch (dbErr) {
+      console.warn('DB getAccount failed, checking fallback accounts:', dbErr.message);
+      const fallbackAccs = getFallbackAccounts();
+      account = fallbackAccs.find((a) => a.username.toLowerCase() === username.toLowerCase());
+    }
+
+    // Fallback account support if DB is disconnected / initial bootstrap
+    if (!account && username.toLowerCase() === 'admin' && password === '5629672Wr') {
+      const hashed = await hashPassword('5629672Wr');
+      account = {
+        id: 'account_admin',
+        username: 'admin',
+        email: 'admin@family.local',
+        password_hash: hashed,
+        role: 'admin',
+        auth_provider: 'local',
+        display_name: 'admin',
+      };
+      try {
+        saveFallbackAccount(account);
+      } catch (e) {}
+    } else if (!account && username.toLowerCase() === 'yoyo' && password === 'Iambia21@') {
+      const hashed = await hashPassword('Iambia21@');
+      account = {
+        id: 'account_default_yoyo',
+        username: 'yoyo',
+        email: 'yoyo@family.local',
+        password_hash: hashed,
+        role: 'user',
+        auth_provider: 'local',
+        display_name: 'yoyo',
+      };
+      try {
+        saveFallbackAccount(account);
+      } catch (e) {}
+    }
+
+    if (!account) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    const isMatch = await comparePassword(password, account.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    const token = generateToken(account);
+    const userPayload = {
+      id: account.id,
+      username: account.username,
+      email: account.email,
+      role: account.role || 'user',
+      authProvider: account.auth_provider || account.authProvider || 'local',
+      displayName: account.display_name || account.displayName || account.username,
+      avatarUrl: account.avatar_url || account.avatarUrl || null,
+    };
+
+    return res.json({ success: true, token, user: userPayload });
+  } catch (error) {
+    console.error('Login endpoint error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 2. Google OAuth Login Endpoint with 5 Accounts Maximum Limit
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ success: false, error: 'Google credential ID token is required' });
+    }
+
+    const googlePayload = await verifyGoogleToken(credential);
+    let account = null;
+
+    try {
+      account = await getDbAccountByGoogleId(googlePayload.googleId);
+      if (!account && googlePayload.email) {
+        account = await getDbAccountByEmail(googlePayload.email);
+      }
+      if (!account && googlePayload.email) {
+        account = await getDbAccountByUsername(googlePayload.email.split('@')[0]);
+      }
+
+      if (!account) {
+        // Check current count of Google accounts in DB (maximum allowed from MAX_GOOGLE_ACCOUNTS)
+        const maxGoogleAccounts = getMaxGoogleAccounts();
+        const googleCount = await countDbGoogleAccounts();
+        if (googleCount >= maxGoogleAccounts) {
+          return res.status(403).json({
+            success: false,
+            error: `Google 登录已达系统名额上限（系统最多允许 ${maxGoogleAccounts} 个 Google 账号）。请联系管理员。 / Google accounts limit reached (max ${maxGoogleAccounts} accounts). Please contact an administrator.`
+          });
+        }
+
+        // Auto-create new user account for family & friends
+        account = await createDbAccount({
+          username: googlePayload.email.split('@')[0],
+          email: googlePayload.email,
+          role: 'user',
+          authProvider: 'google',
+          googleId: googlePayload.googleId,
+          displayName: googlePayload.name,
+          avatarUrl: googlePayload.picture,
+        });
+      } else {
+        // Link or refresh Google info if needed
+        if (!account.google_id && !account.googleId) {
+          await queryDb('UPDATE accounts SET google_id = $1, auth_provider = \'google\', avatar_url = COALESCE(avatar_url, $2) WHERE id = $3', [
+            googlePayload.googleId, googlePayload.picture, account.id
+          ]);
+          account.google_id = googlePayload.googleId;
+          account.auth_provider = 'google';
+        }
+      }
+    } catch (dbErr) {
+      console.warn('DB Google Auth failed, using fallback:', dbErr.message);
+      const fallbackAccs = getFallbackAccounts();
+      account = fallbackAccs.find((a) => a.google_id === googlePayload.googleId || a.email === googlePayload.email || a.username === googlePayload.email.split('@')[0]);
+      
+      if (!account) {
+        const maxGoogleAccounts = getMaxGoogleAccounts();
+        const googleFallbackCount = fallbackAccs.filter(a => a.authProvider === 'google' || a.auth_provider === 'google' || a.google_id || a.googleId).length;
+        if (googleFallbackCount >= maxGoogleAccounts) {
+          return res.status(403).json({
+            success: false,
+            error: `Google 登录已达系统名额上限（系统最多允许 ${maxGoogleAccounts} 个 Google 账号）。请联系管理员。 / Google accounts limit reached (max ${maxGoogleAccounts} accounts).`
+          });
+        }
+        account = {
+          id: 'acc_g_' + Date.now(),
+          username: googlePayload.email.split('@')[0],
+          email: googlePayload.email,
+          role: 'user',
+          auth_provider: 'google',
+          google_id: googlePayload.googleId,
+          display_name: googlePayload.name,
+          avatar_url: googlePayload.picture,
+        };
+        saveFallbackAccount(account);
+      }
+    }
+
+    const token = generateToken(account);
+    const userPayload = {
+      id: account.id,
+      username: account.username,
+      email: account.email,
+      role: account.role || 'user',
+      authProvider: account.auth_provider || account.authProvider || 'google',
+      displayName: account.display_name || account.displayName || googlePayload.name,
+      avatarUrl: account.avatar_url || account.avatarUrl || googlePayload.picture,
+    };
+
+    return res.json({ success: true, token, user: userPayload });
+  } catch (error) {
+    console.error('Google Auth endpoint error:', error);
+    res.status(401).json({ success: false, error: 'Google authentication failed: ' + error.message });
+  }
+});
+
+// 3. Verify / Get Current User Endpoint
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    let account = null;
+    try {
+      account = await getDbAccountById(req.user.id);
+    } catch (e) {}
+
+    const userPayload = account ? {
+      id: account.id,
+      username: account.username,
+      email: account.email,
+      role: account.role || 'user',
+      authProvider: account.authProvider || account.auth_provider || 'local',
+      displayName: account.displayName || account.display_name || account.username,
+      avatarUrl: account.avatarUrl || account.avatar_url || null,
+    } : req.user;
+
+    res.json({ success: true, authenticated: true, user: userPayload });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Legacy passcode verification endpoint for backward compatibility
+app.get('/api/auth/verify', authenticateToken, (req, res) => {
+  res.json({ success: true, authenticated: true, user: req.user });
+});
+
+// Admin Account Management Endpoints
+
+// List all accounts (Admin only)
+app.get('/api/admin/accounts', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    let accounts = [];
+    let googleAccountsCount = 0;
+    try {
+      accounts = await getAllDbAccounts();
+      googleAccountsCount = await countDbGoogleAccounts();
+    } catch (dbErr) {
+      console.warn('DB getAllAccounts failed, returning fallback accounts:', dbErr.message);
+      accounts = getFallbackAccounts();
+      googleAccountsCount = accounts.filter(a => a.authProvider === 'google' || a.auth_provider === 'google' || a.google_id || a.googleId).length;
+    }
+    res.json({ success: true, accounts, googleAccountsCount, maxGoogleAccounts: getMaxGoogleAccounts() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create new account manually (Admin only)
+app.post('/api/admin/accounts', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { username, password, role = 'user', email = null, displayName = null } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required' });
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({ success: false, error: 'Username must be at least 3 characters' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+    }
+
+    let existing = null;
+    try {
+      existing = await getDbAccountByUsername(username);
+    } catch (e) {
+      const fallbackAccs = getFallbackAccounts();
+      existing = fallbackAccs.find((a) => a.username.toLowerCase() === username.toLowerCase());
+    }
+
+    if (existing) {
+      return res.status(400).json({ success: false, error: 'An account with this username already exists' });
+    }
+
+    let newAccount = null;
+    try {
+      newAccount = await createDbAccount({
+        username,
+        password,
+        role: role === 'admin' ? 'admin' : 'user',
+        email,
+        authProvider: 'local',
+        displayName: displayName || username,
+      });
+    } catch (dbErr) {
+      console.warn('DB createAccount failed, using fallback:', dbErr.message);
+      const hashedPassword = await hashPassword(password);
+      newAccount = {
+        id: 'acc_' + Date.now(),
+        username,
+        email,
+        password_hash: hashedPassword,
+        role: role === 'admin' ? 'admin' : 'user',
+        auth_provider: 'local',
+        display_name: displayName || username,
+        created_at: new Date().toISOString(),
+      };
+      saveFallbackAccount(newAccount);
+    }
+
+    res.json({ success: true, account: newAccount });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete account (Admin only)
+app.delete('/api/admin/accounts/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === req.user.id) {
+      return res.status(400).json({ success: false, error: 'You cannot delete your own active admin account' });
+    }
+
+    try {
+      await deleteDbAccount(id);
+    } catch (dbErr) {
+      console.warn('DB deleteAccount failed, using fallback:', dbErr.message);
+      const accounts = getFallbackAccounts().filter((a) => a.id !== id);
+      fs.writeFileSync(path.join(__dirname, '../data/accounts.json'), JSON.stringify(accounts, null, 2));
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Change password for non-Google account (Admin only)
+app.put('/api/admin/accounts/:id/password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.trim().length < 6) {
+      return res.status(400).json({
+        success: false,
+        error: '新密码至少需要 6 个字符 / New password must be at least 6 characters'
+      });
+    }
+
+    try {
+      await updateDbAccountPassword(id, password.trim());
+    } catch (dbErr) {
+      console.warn('DB updateAccountPassword failed, using fallback:', dbErr.message);
+      await updateFallbackAccountPassword(id, password.trim());
+    }
+
+    res.json({ success: true, message: '密码修改成功 / Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
 });
 
 // 0. Subcategories List Endpoint
@@ -93,18 +426,19 @@ app.get('/api/subcategories', async (req, res) => {
   }
 });
 
-// Baby Profile Endpoints
-app.get('/api/baby-profile', async (req, res) => {
+// Baby Profile Endpoints (Scoped per account)
+app.get('/api/baby-profile', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     let profile = null;
     try {
-      profile = await getDbBabyProfile();
+      profile = await getDbBabyProfile(accountId);
     } catch (err) {
       console.warn('DB getBabyProfile failed, using JSON fallback:', err.message);
-      profile = await getFallbackBabyProfile();
+      profile = await getFallbackBabyProfile(accountId);
     }
     if (!profile) {
-      profile = await getFallbackBabyProfile();
+      profile = await getFallbackBabyProfile(accountId);
     }
     res.json({ success: true, profile });
   } catch (error) {
@@ -112,35 +446,64 @@ app.get('/api/baby-profile', async (req, res) => {
   }
 });
 
-app.post('/api/baby-profile', async (req, res) => {
+app.post('/api/baby-profile', authenticateToken, uploadPhotos.single('photo'), async (req, res) => {
   try {
-    const { birthDate, name } = req.body;
+    const accountId = req.user?.id;
+    let payload = req.body || {};
+    if (typeof payload.profileData === 'string') {
+      try {
+        payload = JSON.parse(payload.profileData);
+      } catch (e) {}
+    }
+
+    const birthDate = payload.birthDate || null;
+    const firstName = payload.firstName || null;
+    const lastName = payload.lastName || null;
+    const nickname = payload.nickname || null;
+    const gender = payload.gender || null;
+    let avatarUrl = payload.avatarUrl || null;
+    const name = nickname || firstName || payload.name || 'Baby';
+
+    if (req.file) {
+      avatarUrl = '/uploads/' + req.file.filename;
+    }
+
+    const profileData = {
+      birthDate,
+      firstName,
+      lastName,
+      nickname,
+      gender,
+      avatarUrl,
+      name,
+    };
+
     let profile = null;
     try {
-      profile = await saveDbBabyProfile(birthDate, name || 'Baby');
+      profile = await saveDbBabyProfile(profileData, accountId);
     } catch (err) {
       console.warn('DB saveBabyProfile failed, saving to JSON fallback:', err.message);
-      profile = await saveFallbackBabyProfile(birthDate, name || 'Baby');
+      profile = await saveFallbackBabyProfile(profileData, accountId);
     }
     res.json({ success: true, profile });
   } catch (error) {
+    console.error('Save baby profile error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-async function checkHasBirthDate() {
+async function fetchUserBabyProfile(accountId = null) {
   try {
-    let p = await getDbBabyProfile();
-    if (!p) p = await getFallbackBabyProfile();
-    return !!(p && p.birthDate);
+    let p = await getDbBabyProfile(accountId);
+    if (!p) p = await getFallbackBabyProfile(accountId);
+    return p || null;
   } catch (e) {
-    const p = await getFallbackBabyProfile();
-    return !!(p && p.birthDate);
+    return await getFallbackBabyProfile(accountId);
   }
 }
 
 // 1. Process Raw Audio with Gemini
-app.post('/api/process-audio', uploadAudio.single('audio'), async (req, res) => {
+app.post('/api/process-audio', authenticateToken, uploadAudio.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file uploaded' });
@@ -151,9 +514,9 @@ app.post('/api/process-audio', uploadAudio.single('audio'), async (req, res) => 
     
     console.log(`Processing audio snippet (${req.file.size} bytes, ${mimeType})...`);
 
-    const hasBirthDate = await checkHasBirthDate();
+    const babyProfile = await fetchUserBabyProfile(req.user?.id);
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap, hasBirthDate);
+    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap, babyProfile);
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-audio error:', error);
@@ -162,16 +525,17 @@ app.post('/api/process-audio', uploadAudio.single('audio'), async (req, res) => 
 });
 
 // 2. Process Text Fallback with Gemini
-app.post('/api/process-text', async (req, res) => {
+app.post('/api/process-text', authenticateToken, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Text input is required' });
     }
 
-    const hasBirthDate = await checkHasBirthDate();
+    const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+    const babyProfile = await fetchUserBabyProfile(req.user?.id);
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap, hasBirthDate);
+    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap, babyProfile);
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-text error:', error);
@@ -180,7 +544,7 @@ app.post('/api/process-text', async (req, res) => {
 });
 
 // 2.5 Sanity Check and Format Validation
-app.post('/api/validate-log', async (req, res) => {
+app.post('/api/validate-log', authenticateToken, async (req, res) => {
   try {
     const { logData } = req.body;
     if (!logData) {
@@ -208,11 +572,12 @@ app.post('/api/validate-log', async (req, res) => {
 });
 
 
-// 3. Get Logs
-app.get('/api/logs', async (req, res) => {
+// 3. Get Logs (Scoped per account)
+app.get('/api/logs', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     try {
-      const logs = await getDbLogs();
+      const logs = await getDbLogs(accountId);
       return res.json({ success: true, logs, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL query failed, falling back to local storage:', dbErr.message);
@@ -224,14 +589,15 @@ app.get('/api/logs', async (req, res) => {
   }
 });
 
-// 3b. Export Logs Endpoint (supports format=csv or format=json)
-app.get('/api/logs/export', async (req, res) => {
+// 3b. Export Logs Endpoint (supports format=csv or format=json, scoped per account)
+app.get('/api/logs/export', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const { startDate, endDate, category, format } = req.query;
 
     let logs = [];
     try {
-      logs = await getDbLogsFiltered({ startDate, endDate, category });
+      logs = await getDbLogsFiltered({ accountId, startDate, endDate, category });
     } catch (dbErr) {
       console.warn('PostgreSQL export query failed, using all local logs:', dbErr.message);
       logs = await getFallbackLogs();
@@ -300,9 +666,10 @@ app.get('/api/logs/export', async (req, res) => {
 });
 
 
-// 4. Save Log Entry (supports optional multipart photo attachments)
-app.post('/api/logs', uploadPhotos.array('photos', 5), async (req, res) => {
+// 4. Save Log Entry (supports optional multipart photo attachments, scoped per account)
+app.post('/api/logs', authenticateToken, uploadPhotos.array('photos', 5), async (req, res) => {
   try {
+    const accountId = req.user?.id;
     let logData = req.body;
     if (logData && logData.logData) {
       if (typeof logData.logData === 'string') {
@@ -326,7 +693,7 @@ app.post('/api/logs', uploadPhotos.array('photos', 5), async (req, res) => {
     }));
 
     try {
-      const savedEntry = await saveDbLogEntry(logData, attachments);
+      const savedEntry = await saveDbLogEntry(logData, attachments, accountId);
       return res.json({ success: true, entry: savedEntry, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL save failed, falling back to local storage:', dbErr.message);
@@ -339,9 +706,10 @@ app.post('/api/logs', uploadPhotos.array('photos', 5), async (req, res) => {
   }
 });
 
-// 5. Update Log Entry
-app.put('/api/logs/:id', uploadPhotos.array('photos', 5), async (req, res) => {
+// 5. Update Log Entry (scoped per account)
+app.put('/api/logs/:id', authenticateToken, uploadPhotos.array('photos', 5), async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const { id } = req.params;
     let logData = req.body;
     if (logData && logData.logData) {
@@ -377,7 +745,7 @@ app.put('/api/logs/:id', uploadPhotos.array('photos', 5), async (req, res) => {
     }));
 
     try {
-      const updatedEntry = await updateDbLogEntry(id, logData, newAttachments, removedAttachmentIds);
+      const updatedEntry = await updateDbLogEntry(id, logData, newAttachments, removedAttachmentIds, accountId);
       return res.json({ success: true, entry: updatedEntry, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL update failed, falling back to local storage:', dbErr.message);
@@ -391,12 +759,13 @@ app.put('/api/logs/:id', uploadPhotos.array('photos', 5), async (req, res) => {
 });
 
 
-// 5. Delete Log Entry
-app.delete('/api/logs/:id', async (req, res) => {
+// 6. Delete Log Entry (scoped per account)
+app.delete('/api/logs/:id', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const { id } = req.params;
     try {
-      await deleteDbLogEntry(id);
+      await deleteDbLogEntry(id, accountId);
     } catch (dbErr) {
       console.warn('PostgreSQL delete fallback to local storage:', dbErr.message);
       deleteFallbackLogEntry(id);
@@ -409,14 +778,15 @@ app.delete('/api/logs/:id', async (req, res) => {
 
 
 // ==========================================
-// TIMER & EXPIRY ENDPOINTS
+// TIMER & EXPIRY ENDPOINTS (Scoped per account)
 // ==========================================
 
 // GET all timers (feeding session & RTF bottles)
-app.get('/api/timers', async (req, res) => {
+app.get('/api/timers', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     try {
-      const state = await getDbTimersState();
+      const state = await getDbTimersState(accountId);
       return res.json({ success: true, ...state, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL get timers fallback to local storage:', dbErr.message);
@@ -429,11 +799,12 @@ app.get('/api/timers', async (req, res) => {
 });
 
 // POST start feeding/sleeping session
-app.post('/api/timers/feeding/start', async (req, res) => {
+app.post('/api/timers/feeding/start', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const sessionType = req.body?.sessionType || 'feeding';
     try {
-      const session = await startDbFeedingSession(sessionType);
+      const session = await startDbFeedingSession(sessionType, accountId);
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL start feeding timer fallback to local storage:', dbErr.message);
@@ -446,10 +817,11 @@ app.post('/api/timers/feeding/start', async (req, res) => {
 });
 
 // POST stop feeding session (sets state to 'ended')
-app.post('/api/timers/feeding/stop', async (req, res) => {
+app.post('/api/timers/feeding/stop', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     try {
-      const session = await stopDbFeedingSession();
+      const session = await stopDbFeedingSession(accountId);
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL stop feeding timer fallback to local storage:', dbErr.message);
@@ -462,10 +834,11 @@ app.post('/api/timers/feeding/stop', async (req, res) => {
 });
 
 // POST reset feeding session to idle
-app.post('/api/timers/feeding/reset', async (req, res) => {
+app.post('/api/timers/feeding/reset', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     try {
-      const session = await resetDbFeedingSession();
+      const session = await resetDbFeedingSession(accountId);
       return res.json({ success: true, session, source: 'postgres' });
     } catch (dbErr) {
       console.warn('PostgreSQL reset feeding timer fallback to local storage:', dbErr.message);
@@ -478,15 +851,16 @@ app.post('/api/timers/feeding/reset', async (req, res) => {
 });
 
 // POST open a Ready-To-Feed bottle ('237ml' or '59ml')
-app.post('/api/timers/bottles/open', async (req, res) => {
+app.post('/api/timers/bottles/open', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const { bottleType } = req.body;
     if (!bottleType || !['237ml', '59ml'].includes(bottleType)) {
       return res.status(400).json({ success: false, error: 'Invalid bottleType. Must be 237ml or 59ml' });
     }
 
     try {
-      const newBottle = await openDbFormulaBottle(bottleType);
+      const newBottle = await openDbFormulaBottle(bottleType, accountId);
       return res.json({ success: true, bottle: newBottle, source: 'postgres' });
     } catch (dbErr) {
       if (dbErr.message.includes('Maximum limit')) {
@@ -502,11 +876,12 @@ app.post('/api/timers/bottles/open', async (req, res) => {
 });
 
 // DELETE finish/discard an opened RTF bottle
-app.delete('/api/timers/bottles/:id', async (req, res) => {
+app.delete('/api/timers/bottles/:id', authenticateToken, async (req, res) => {
   try {
+    const accountId = req.user?.id;
     const { id } = req.params;
     try {
-      await finishDbFormulaBottle(id);
+      await finishDbFormulaBottle(id, accountId);
     } catch (dbErr) {
       console.warn('PostgreSQL finish RTF bottle fallback to local storage:', dbErr.message);
       await finishFallbackFormulaBottle(id);

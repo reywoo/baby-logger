@@ -69,13 +69,30 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     return `${year}-${month}-${day}`;
   })();
 
-  // Cutoff date for past 7 days
-  const sevenDaysAgoCutoff = useMemo(() => {
+  const [selectedDays, setSelectedDays] = useState(() => {
+    const saved = localStorage.getItem('timeline_days');
+    if (saved && ['7', '14', '30'].includes(saved)) {
+      return parseInt(saved, 10);
+    }
+    return 7;
+  });
+
+  const handleSelectDays = (days) => {
+    setSelectedDays(days);
+    try {
+      localStorage.setItem('timeline_days', days.toString());
+    } catch (e) {
+      console.warn('Failed to save timeline_days to localStorage:', e);
+    }
+  };
+
+  // Cutoff date for past selectedDays
+  const timeRangeCutoff = useMemo(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 6);
+    d.setDate(d.getDate() - (selectedDays - 1));
     d.setHours(0, 0, 0, 0);
     return d.getTime();
-  }, []);
+  }, [selectedDays]);
 
   // Group logs by date key
   const { dateGroups, sortedKeys, todayLogs } = useMemo(() => {
@@ -90,8 +107,8 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
         logTime = new Date(log.displayDate).getTime();
       }
 
-      if (logTime && !isNaN(logTime) && logTime < sevenDaysAgoCutoff) {
-        return; // Skip logs older than 7 days
+      if (logTime && !isNaN(logTime) && logTime < timeRangeCutoff) {
+        return; // Skip logs older than selected days cutoff
       }
 
       const key = getLogDateKey(log);
@@ -102,7 +119,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     const keys = Object.keys(groups).sort((a, b) => (a < b ? 1 : -1));
     const tLogs = groups[todayKey] || [];
     return { dateGroups: groups, sortedKeys: keys, todayLogs: tLogs };
-  }, [logs, todayKey, sevenDaysAgoCutoff]);
+  }, [logs, todayKey, timeRangeCutoff]);
 
   const [expandedDates, setExpandedDates] = useState(() => {
     const initial = {};
@@ -268,6 +285,41 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
             {isZh ? '尿布更换' : 'changes'}
           </div>
           <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.totalDiaper}</div>
+        </div>
+      </div>
+
+      {/* Time Range Selector */}
+      <div className="glass-panel" style={{ padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+          <Clock size={16} style={{ color: 'var(--primary-accent)' }} />
+          <span>{isZh ? '历史日志范围' : 'Log History Window'}</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.35rem', background: 'rgba(15, 23, 42, 0.4)', padding: '3px', borderRadius: '0.75rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+          {[7, 14, 30].map((days) => {
+            const isActive = selectedDays === days;
+            return (
+              <button
+                key={days}
+                type="button"
+                onClick={() => handleSelectDays(days)}
+                style={{
+                  background: isActive ? 'var(--primary-accent)' : 'transparent',
+                  color: isActive ? '#fff' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: '0.55rem',
+                  padding: '0.35rem 0.75rem',
+                  fontSize: '0.8rem',
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: isActive ? '0 2px 8px rgba(99, 102, 241, 0.4)' : 'none',
+                }}
+              >
+                {isZh ? `近${days}天` : `${days} Days`}
+              </button>
+            );
+          })}
         </div>
       </div>
 
