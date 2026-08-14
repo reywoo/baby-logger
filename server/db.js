@@ -151,8 +151,8 @@ export async function initDb() {
         );
 
         CREATE TABLE IF NOT EXISTS feeding_timers (
-            id VARCHAR(64) PRIMARY KEY,
-            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+            id SERIAL PRIMARY KEY,
+            account_id VARCHAR(64) NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
             status VARCHAR(20) NOT NULL DEFAULT 'idle',
             session_type VARCHAR(20) NOT NULL DEFAULT 'feeding',
             start_time TIMESTAMPTZ,
@@ -160,22 +160,19 @@ export async function initDb() {
             expires_at TIMESTAMPTZ,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
-        ALTER TABLE feeding_timers ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) NOT NULL DEFAULT 'feeding';
 
         CREATE TABLE IF NOT EXISTS opened_formula_bottles (
-            id VARCHAR(64) PRIMARY KEY,
-            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+            id SERIAL PRIMARY KEY,
+            account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
             bottle_type VARCHAR(20) NOT NULL,
             opened_at TIMESTAMPTZ NOT NULL,
             expires_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        ALTER TABLE opened_formula_bottles ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
 
         CREATE TABLE IF NOT EXISTS baby_profile (
-            id VARCHAR(64) PRIMARY KEY DEFAULT 'default_baby',
-            account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+            id SERIAL PRIMARY KEY,
+            account_id VARCHAR(64) NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
             name VARCHAR(100) DEFAULT 'Baby',
             first_name VARCHAR(100),
             last_name VARCHAR(100),
@@ -186,13 +183,6 @@ export async function initDb() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS nickname VARCHAR(100);
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS gender VARCHAR(20);
-        ALTER TABLE baby_profile ADD COLUMN IF NOT EXISTS avatar_url TEXT;
-        ALTER TABLE baby_profile ALTER COLUMN birth_date DROP NOT NULL;
 
         CREATE INDEX IF NOT EXISTS idx_action_logs_start_time ON action_logs(start_time DESC);
         CREATE INDEX IF NOT EXISTS idx_action_logs_category ON action_logs(category, sub_category);
@@ -233,10 +223,9 @@ export async function initDb() {
       }
 
       // Remove any orphaned baby_profile or timer records from deleted test accounts
-      await client.query(`DELETE FROM baby_profile WHERE account_id IS NULL OR account_id NOT IN (SELECT id FROM accounts)`);
-      await client.query(`DELETE FROM baby_profile WHERE id != 'baby_' || account_id`);
-      await client.query(`DELETE FROM feeding_timers WHERE account_id IS NULL OR account_id NOT IN (SELECT id FROM accounts)`);
-      await client.query(`DELETE FROM feeding_timers WHERE id != 'active_session_' || account_id`);
+      await client.query(`DELETE FROM baby_profile WHERE account_id NOT IN (SELECT id FROM accounts)`);
+      await client.query(`DELETE FROM feeding_timers WHERE account_id NOT IN (SELECT id FROM accounts)`);
+      await client.query(`DELETE FROM opened_formula_bottles WHERE account_id NOT IN (SELECT id FROM accounts)`);
 
       console.log('PostgreSQL Database schema initialized successfully.');
     } finally {
@@ -686,18 +675,23 @@ export async function deleteDbLogEntry(id, accountId = null) {
  * Get current timers state from PostgreSQL DB
  */
 export async function getDbTimersState(accountId = null) {
-  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
+  if (!accountId) {
+    return {
+      feedingSession: { id: null, status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null },
+      openedBottles: [],
+    };
+  }
   const now = new Date();
 
   // 1. Feeding / Sleeping Session state
   const sessionRes = await queryDb(
     `SELECT id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt" 
      FROM feeding_timers 
-     WHERE id = $1
+     WHERE account_id = $1
      LIMIT 1`,
-    [sessionId]
+    [accountId]
   );
-  let feedingSession = sessionRes.rows[0] || { id: sessionId, status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
+  let feedingSession = sessionRes.rows[0] || { id: null, status: 'idle', sessionType: 'feeding', startTime: null, endTime: null, expiresAt: null };
   if (!feedingSession.sessionType) feedingSession.sessionType = 'feeding';
 
   // Check if session in 'active' state has expired (>1hr)
@@ -707,9 +701,9 @@ export async function getDbTimersState(accountId = null) {
       const updateRes = await queryDb(
         `UPDATE feeding_timers 
          SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = $2 
+         WHERE account_id = $2 
          RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-        [feedingSession.expiresAt, feedingSession.id]
+        [feedingSession.expiresAt, accountId]
       );
       feedingSession = updateRes.rows[0];
       feedingSession.reason = 'expired';
@@ -720,9 +714,9 @@ export async function getDbTimersState(accountId = null) {
   const bottlesRes = await queryDb(
     `SELECT id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"
      FROM opened_formula_bottles
-     ${accountId ? 'WHERE account_id = $1' : ''}
+     WHERE account_id = $1
      ORDER BY created_at DESC`,
-    accountId ? [accountId] : []
+    [accountId]
   );
 
   return {
@@ -735,17 +729,17 @@ export async function getDbTimersState(accountId = null) {
  * Start a feeding or sleeping session in PostgreSQL DB
  */
 export async function startDbFeedingSession(sessionType = 'feeding', accountId = null) {
-  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
+  if (!accountId) throw new Error('Account ID is required to start a session');
   const now = new Date();
   const expiresAt = sessionType === 'feeding' ? new Date(now.getTime() + 60 * 60 * 1000) : null;
 
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, account_id, status, session_type, start_time, end_time, expires_at, updated_at)
-     VALUES ($1, $2, 'active', $3, $4, NULL, $5, CURRENT_TIMESTAMP)
-     ON CONFLICT (id) DO UPDATE 
-     SET status = 'active', session_type = EXCLUDED.session_type, start_time = EXCLUDED.start_time, end_time = NULL, expires_at = EXCLUDED.expires_at, account_id = COALESCE(EXCLUDED.account_id, feeding_timers.account_id), updated_at = CURRENT_TIMESTAMP
+    `INSERT INTO feeding_timers (account_id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ($1, 'active', $2, $3, NULL, $4, CURRENT_TIMESTAMP)
+     ON CONFLICT (account_id) DO UPDATE 
+     SET status = 'active', session_type = EXCLUDED.session_type, start_time = EXCLUDED.start_time, end_time = NULL, expires_at = EXCLUDED.expires_at, updated_at = CURRENT_TIMESTAMP
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [sessionId, accountId, sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
+    [accountId, sessionType, now.toISOString(), expiresAt ? expiresAt.toISOString() : null]
   );
 
   return res.rows[0];
@@ -755,32 +749,32 @@ export async function startDbFeedingSession(sessionType = 'feeding', accountId =
  * Stop an active feeding/sleeping session in PostgreSQL DB
  */
 export async function stopDbFeedingSession(accountId = null) {
-  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
+  if (!accountId) throw new Error('Account ID is required to stop a session');
   const now = new Date();
 
   const res = await queryDb(
     `UPDATE feeding_timers 
      SET status = 'ended', end_time = $1, updated_at = CURRENT_TIMESTAMP 
-     WHERE id = $2
+     WHERE account_id = $2
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [now.toISOString(), sessionId]
+    [now.toISOString(), accountId]
   );
 
-  return res.rows[0] || { id: sessionId, status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };
+  return res.rows[0] || { id: null, status: 'ended', sessionType: 'feeding', startTime: now.toISOString(), endTime: now.toISOString() };
 }
 
 /**
  * Reset feeding/sleeping session to IDLE in PostgreSQL DB
  */
 export async function resetDbFeedingSession(accountId = null) {
-  const sessionId = accountId ? `active_session_${accountId}` : 'active_session';
+  if (!accountId) throw new Error('Account ID is required to reset a session');
   const res = await queryDb(
-    `INSERT INTO feeding_timers (id, account_id, status, session_type, start_time, end_time, expires_at, updated_at)
-     VALUES ($1, $2, 'idle', 'feeding', NULL, NULL, NULL, CURRENT_TIMESTAMP)
-     ON CONFLICT (id) DO UPDATE 
+    `INSERT INTO feeding_timers (account_id, status, session_type, start_time, end_time, expires_at, updated_at)
+     VALUES ($1, 'idle', 'feeding', NULL, NULL, NULL, CURRENT_TIMESTAMP)
+     ON CONFLICT (account_id) DO UPDATE 
      SET status = 'idle', session_type = 'feeding', start_time = NULL, end_time = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP
      RETURNING id, status, session_type AS "sessionType", start_time AS "startTime", end_time AS "endTime", expires_at AS "expiresAt"`,
-    [sessionId, accountId]
+    [accountId]
   );
 
   return res.rows[0];
@@ -790,9 +784,10 @@ export async function resetDbFeedingSession(accountId = null) {
  * Open a Ready-To-Feed formula bottle in PostgreSQL DB
  */
 export async function openDbFormulaBottle(bottleType, accountId = null) {
+  if (!accountId) throw new Error('Account ID is required to open a bottle');
   const countRes = await queryDb(
-    `SELECT COUNT(*) FROM opened_formula_bottles ${accountId ? 'WHERE account_id = $1' : ''}`,
-    accountId ? [accountId] : []
+    `SELECT COUNT(*) FROM opened_formula_bottles WHERE account_id = $1`,
+    [accountId]
   );
   const count = parseInt(countRes.rows[0].count, 10);
   if (count >= 5) {
@@ -802,13 +797,12 @@ export async function openDbFormulaBottle(bottleType, accountId = null) {
   const now = new Date();
   const hoursToAdd = bottleType === '237ml' ? 48 : 24;
   const expiresAt = new Date(now.getTime() + hoursToAdd * 60 * 60 * 1000);
-  const id = 'rtf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
   const res = await queryDb(
-    `INSERT INTO opened_formula_bottles (id, account_id, bottle_type, opened_at, expires_at, created_at)
-     VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+    `INSERT INTO opened_formula_bottles (account_id, bottle_type, opened_at, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
      RETURNING id, bottle_type AS "bottleType", opened_at AS "openedAt", expires_at AS "expiresAt", created_at AS "createdAt"`,
-    [id, accountId, bottleType, now.toISOString(), expiresAt.toISOString()]
+    [accountId, bottleType, now.toISOString(), expiresAt.toISOString()]
   );
 
   return res.rows[0];
@@ -819,7 +813,7 @@ export async function openDbFormulaBottle(bottleType, accountId = null) {
  */
 export async function finishDbFormulaBottle(id, accountId = null) {
   if (accountId) {
-    await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1 AND (account_id = $2 OR account_id IS NULL)', [id, accountId]);
+    await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1 AND account_id = $2', [id, accountId]);
   } else {
     await queryDb('DELETE FROM opened_formula_bottles WHERE id = $1', [id]);
   }
@@ -830,35 +824,21 @@ export async function finishDbFormulaBottle(id, accountId = null) {
  * Get Baby Profile from PostgreSQL DB (Scoped by accountId)
  */
 export async function getDbBabyProfile(accountId = null) {
-  const query = accountId
-    ? `SELECT 
-         id, 
-         name, 
-         first_name AS "firstName", 
-         last_name AS "lastName", 
-         nickname, 
-         gender, 
-         avatar_url AS "avatarUrl", 
-         TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
-         updated_at AS "updatedAt"
-       FROM baby_profile
-       WHERE account_id = $1
-       LIMIT 1`
-    : `SELECT 
-         id, 
-         name, 
-         first_name AS "firstName", 
-         last_name AS "lastName", 
-         nickname, 
-         gender, 
-         avatar_url AS "avatarUrl", 
-         TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
-         updated_at AS "updatedAt"
-       FROM baby_profile
-       WHERE id = 'default_baby'
-       LIMIT 1`;
-  const params = accountId ? [accountId] : [];
-  const res = await queryDb(query, params);
+  if (!accountId) return null;
+  const query = `SELECT 
+       id, 
+       name, 
+       first_name AS "firstName", 
+       last_name AS "lastName", 
+       nickname, 
+       gender, 
+       avatar_url AS "avatarUrl", 
+       TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
+       updated_at AS "updatedAt"
+     FROM baby_profile
+     WHERE account_id = $1
+     LIMIT 1`;
+  const res = await queryDb(query, [accountId]);
   return res.rows[0] || null;
 }
 
@@ -866,6 +846,7 @@ export async function getDbBabyProfile(accountId = null) {
  * Save / Update Baby Profile in PostgreSQL DB (Scoped by accountId)
  */
 export async function saveDbBabyProfile(profileData = {}, accountId = null) {
+  if (!accountId) return null;
   const birthDate = profileData.birthDate || null;
   const firstName = profileData.firstName?.trim() || null;
   const lastName = profileData.lastName?.trim() || null;
@@ -873,22 +854,17 @@ export async function saveDbBabyProfile(profileData = {}, accountId = null) {
   const gender = profileData.gender || null;
   const avatarUrl = profileData.avatarUrl || null;
   const name = nickname || firstName || profileData.name || 'Baby';
-  const recordId = accountId ? `baby_${accountId}` : 'default_baby';
 
   // If entirely empty/cleared
   if (!birthDate && !firstName && !lastName && !nickname && !gender && !avatarUrl) {
-    if (accountId) {
-      await queryDb(`DELETE FROM baby_profile WHERE account_id = $1 OR id = $2`, [accountId, recordId]);
-    } else {
-      await queryDb(`DELETE FROM baby_profile WHERE id = 'default_baby'`);
-    }
+    await queryDb(`DELETE FROM baby_profile WHERE account_id = $1`, [accountId]);
     return null;
   }
 
   const res = await queryDb(
-    `INSERT INTO baby_profile (id, name, first_name, last_name, nickname, gender, avatar_url, birth_date, account_id, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
-     ON CONFLICT (id) DO UPDATE
+    `INSERT INTO baby_profile (account_id, name, first_name, last_name, nickname, gender, avatar_url, birth_date, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+     ON CONFLICT (account_id) DO UPDATE
      SET name = EXCLUDED.name,
          first_name = EXCLUDED.first_name,
          last_name = EXCLUDED.last_name,
@@ -896,7 +872,6 @@ export async function saveDbBabyProfile(profileData = {}, accountId = null) {
          gender = EXCLUDED.gender,
          avatar_url = COALESCE(EXCLUDED.avatar_url, baby_profile.avatar_url),
          birth_date = EXCLUDED.birth_date,
-         account_id = COALESCE(EXCLUDED.account_id, baby_profile.account_id),
          updated_at = CURRENT_TIMESTAMP
      RETURNING 
        id, 
@@ -908,7 +883,7 @@ export async function saveDbBabyProfile(profileData = {}, accountId = null) {
        avatar_url AS "avatarUrl", 
        TO_CHAR(birth_date, 'YYYY-MM-DD') AS "birthDate", 
        updated_at AS "updatedAt"`,
-    [recordId, name, firstName, lastName, nickname, gender, avatarUrl, birthDate, accountId]
+    [accountId, name, firstName, lastName, nickname, gender, avatarUrl, birthDate]
   );
   return res.rows[0];
 }
@@ -965,8 +940,8 @@ export async function getAllDbAccounts() {
 }
 
 export async function deleteDbAccount(id) {
-  await queryDb('DELETE FROM baby_profile WHERE account_id = $1 OR id = $2', [id, 'baby_' + id]);
-  await queryDb('DELETE FROM feeding_timers WHERE account_id = $1 OR id = $2', [id, 'active_session_' + id]);
+  await queryDb('DELETE FROM baby_profile WHERE account_id = $1', [id]);
+  await queryDb('DELETE FROM feeding_timers WHERE account_id = $1', [id]);
   await queryDb('DELETE FROM opened_formula_bottles WHERE account_id = $1', [id]);
   await queryDb('DELETE FROM action_logs WHERE account_id = $1', [id]);
   await queryDb('DELETE FROM accounts WHERE id = $1', [id]);
