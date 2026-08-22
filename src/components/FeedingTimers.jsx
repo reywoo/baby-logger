@@ -120,7 +120,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
     }
   };
 
-  const handleCreateRecordFromSession = () => {
+  const handleCreateRecordFromSession = async () => {
     if (!session || !session.startTime) return;
 
     const startTimeIso = session.startTime;
@@ -170,6 +170,9 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
         notes: '',
       });
     }
+
+    // Automatically reset session to prevent creating duplicate records
+    await handleResetSession();
   };
 
   // Bottle Expiry Handlers
