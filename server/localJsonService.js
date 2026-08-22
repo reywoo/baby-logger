@@ -7,8 +7,6 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '../data');
 const LOCAL_DB_FILE = path.join(DATA_DIR, 'logs.json');
 
-const ACCOUNTS_DB_FILE = path.join(DATA_DIR, 'accounts.json');
-
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -16,57 +14,6 @@ if (!fs.existsSync(DATA_DIR)) {
 
 if (!fs.existsSync(LOCAL_DB_FILE)) {
   fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify([], null, 2));
-}
-
-if (!fs.existsSync(ACCOUNTS_DB_FILE)) {
-  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify([], null, 2));
-}
-
-/**
- * Get accounts stored in local JSON fallback
- */
-export function getFallbackAccounts() {
-  try {
-    const data = fs.readFileSync(ACCOUNTS_DB_FILE, 'utf8');
-    return JSON.parse(data || '[]');
-  } catch (err) {
-    return [];
-  }
-}
-
-/**
- * Save account in local JSON fallback
- */
-export function saveFallbackAccount(account) {
-  const accounts = getFallbackAccounts();
-  const existingIndex = accounts.findIndex((a) => a.id === account.id || a.username === account.username);
-  if (existingIndex >= 0) {
-    accounts[existingIndex] = { ...accounts[existingIndex], ...account };
-  } else {
-    accounts.push(account);
-  }
-  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify(accounts, null, 2));
-  return account;
-}
-
-/**
- * Update password for an account in local JSON fallback
- */
-export async function updateFallbackAccountPassword(id, newPassword) {
-  const accounts = getFallbackAccounts();
-  const index = accounts.findIndex(a => a.id === id);
-  if (index === -1) {
-    throw new Error('Account not found');
-  }
-  if (accounts[index].auth_provider === 'google' || accounts[index].authProvider === 'google') {
-    throw new Error('Cannot change password for Google accounts');
-  }
-  const { hashPassword } = await import('./authService.js');
-  const passwordHash = await hashPassword(newPassword);
-  accounts[index].password_hash = passwordHash;
-  accounts[index].updated_at = new Date().toISOString();
-  fs.writeFileSync(ACCOUNTS_DB_FILE, JSON.stringify(accounts, null, 2));
-  return accounts[index];
 }
 
 /**

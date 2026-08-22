@@ -953,14 +953,14 @@ export async function countDbGoogleAccounts() {
   return parseInt(res.rows[0].count, 10);
 }
 
-export async function updateDbAccountPassword(id, newPassword) {
+export async function updateDbAccountPassword(idOrUsername, newPassword) {
   const passwordHash = await hashPassword(newPassword);
   const res = await queryDb(`
     UPDATE accounts
     SET password_hash = $1, updated_at = CURRENT_TIMESTAMP
-    WHERE id = $2 AND (auth_provider = 'local' OR auth_provider IS NULL)
+    WHERE (id = $2 OR username = $2) AND (auth_provider = 'local' OR auth_provider IS NULL)
     RETURNING id, username, email, role, auth_provider AS "authProvider"
-  `, [passwordHash, id]);
+  `, [passwordHash, idOrUsername]);
 
   if (res.rows.length === 0) {
     throw new Error('Account not found or is a Google account.');

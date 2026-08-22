@@ -9,11 +9,10 @@ import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWith
 import { 
   getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry,
   getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle,
-  getFallbackBabyProfile, saveFallbackBabyProfile,
-  getFallbackAccounts, saveFallbackAccount, updateFallbackAccountPassword
+  getFallbackBabyProfile, saveFallbackBabyProfile
 } from './localJsonService.js';
 import { 
-  initDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry,
+  initDb, queryDb, getDbLogs, getDbLogsFiltered, getExistingSubCategories, saveDbLogEntry, updateDbLogEntry, deleteDbLogEntry,
   getDbTimersState, startDbFeedingSession, stopDbFeedingSession, resetDbFeedingSession, openDbFormulaBottle, finishDbFormulaBottle,
   getDbBabyProfile, saveDbBabyProfile,
   getDbAccountByUsername, getDbAccountByEmail, getDbAccountByGoogleId, getDbAccountById, createDbAccount, getAllDbAccounts, deleteDbAccount, countDbGoogleAccounts, updateDbAccountPassword
@@ -93,48 +92,20 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Username and password are required' });
     }
 
-    let account = null;
-    try {
-      account = await getDbAccountByUsername(username);
-    } catch (dbErr) {
-      console.warn('DB getAccount failed, checking fallback accounts:', dbErr.message);
-      const fallbackAccs = getFallbackAccounts();
-      account = fallbackAccs.find((a) => a.username.toLowerCase() === username.toLowerCase());
-    }
-
-    // Fallback account support if DB is disconnected / initial bootstrap
-    if (!account && username.toLowerCase() === 'admin' && password === '5629672Wr') {
-      const hashed = await hashPassword('5629672Wr');
-      account = {
-        id: 'account_admin',
-        username: 'admin',
-        email: 'admin@family.local',
-        password_hash: hashed,
-        role: 'admin',
-        auth_provider: 'local',
-        display_name: 'admin',
-      };
-      try {
-        saveFallbackAccount(account);
-      } catch (e) {}
-    } else if (!account && username.toLowerCase() === 'yoyo' && password === 'Iambia21@') {
-      const hashed = await hashPassword('Iambia21@');
-      account = {
-        id: 'account_default_yoyo',
-        username: 'yoyo',
-        email: 'yoyo@family.local',
-        password_hash: hashed,
-        role: 'user',
-        auth_provider: 'local',
-        display_name: 'yoyo',
-      };
-      try {
-        saveFallbackAccount(account);
-      } catch (e) {}
-    }
-
+    const account = await getDbAccountByUsername(username);
     if (!account) {
       return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    if (account.auth_provider === 'google' || account.authProvider === 'google') {
+      return res.status(400).json({
+        success: false,
+        error: 'This account is linked to Google. Please sign in with Google.'
+      });
+    }
+
+    if (!account.password_hash) {
+      return res.status(401).json({ success: false, error: 'Password is not set for this account.' });
     }
 
     const isMatch = await comparePassword(password, account.password_hash);
@@ -160,7 +131,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// 2. Google OAuth Login Endpoint with 5 Accounts Maximum Limit
+// 2. Google OAuth Login Endpoint
 app.post('/api/auth/google', async (req, res) => {
   try {
     const { credential } = req.body;
@@ -169,73 +140,43 @@ app.post('/api/auth/google', async (req, res) => {
     }
 
     const googlePayload = await verifyGoogleToken(credential);
-    let account = null;
+    let account = await getDbAccountByGoogleId(googlePayload.googleId);
+    if (!account && googlePayload.email) {
+      account = await getDbAccountByEmail(googlePayload.email);
+    }
+    if (!account && googlePayload.email) {
+      account = await getDbAccountByUsername(googlePayload.email.split('@')[0]);
+    }
 
-    try {
-      account = await getDbAccountByGoogleId(googlePayload.googleId);
-      if (!account && googlePayload.email) {
-        account = await getDbAccountByEmail(googlePayload.email);
-      }
-      if (!account && googlePayload.email) {
-        account = await getDbAccountByUsername(googlePayload.email.split('@')[0]);
-      }
-
-      if (!account) {
-        // Check current count of Google accounts in DB (maximum allowed from MAX_GOOGLE_ACCOUNTS)
-        const maxGoogleAccounts = getMaxGoogleAccounts();
-        const googleCount = await countDbGoogleAccounts();
-        if (googleCount >= maxGoogleAccounts) {
-          return res.status(403).json({
-            success: false,
-            error: `Google 登录已达系统名额上限（系统最多允许 ${maxGoogleAccounts} 个 Google 账号）。请联系管理员。 / Google accounts limit reached (max ${maxGoogleAccounts} accounts). Please contact an administrator.`
-          });
-        }
-
-        // Auto-create new user account for family & friends
-        account = await createDbAccount({
-          username: googlePayload.email.split('@')[0],
-          email: googlePayload.email,
-          role: 'user',
-          authProvider: 'google',
-          googleId: googlePayload.googleId,
-          displayName: googlePayload.name,
-          avatarUrl: googlePayload.picture,
+    if (!account) {
+      // Check current count of Google accounts in DB (maximum allowed from MAX_GOOGLE_ACCOUNTS)
+      const maxGoogleAccounts = getMaxGoogleAccounts();
+      const googleCount = await countDbGoogleAccounts();
+      if (googleCount >= maxGoogleAccounts) {
+        return res.status(403).json({
+          success: false,
+          error: `Google 登录已达系统名额上限（系统最多允许 ${maxGoogleAccounts} 个 Google 账号）。请联系管理员。 / Google accounts limit reached (max ${maxGoogleAccounts} accounts). Please contact an administrator.`
         });
-      } else {
-        // Link or refresh Google info if needed
-        if (!account.google_id && !account.googleId) {
-          await queryDb('UPDATE accounts SET google_id = $1, auth_provider = \'google\', avatar_url = COALESCE(avatar_url, $2) WHERE id = $3', [
-            googlePayload.googleId, googlePayload.picture, account.id
-          ]);
-          account.google_id = googlePayload.googleId;
-          account.auth_provider = 'google';
-        }
       }
-    } catch (dbErr) {
-      console.warn('DB Google Auth failed, using fallback:', dbErr.message);
-      const fallbackAccs = getFallbackAccounts();
-      account = fallbackAccs.find((a) => a.google_id === googlePayload.googleId || a.email === googlePayload.email || a.username === googlePayload.email.split('@')[0]);
-      
-      if (!account) {
-        const maxGoogleAccounts = getMaxGoogleAccounts();
-        const googleFallbackCount = fallbackAccs.filter(a => a.authProvider === 'google' || a.auth_provider === 'google' || a.google_id || a.googleId).length;
-        if (googleFallbackCount >= maxGoogleAccounts) {
-          return res.status(403).json({
-            success: false,
-            error: `Google 登录已达系统名额上限（系统最多允许 ${maxGoogleAccounts} 个 Google 账号）。请联系管理员。 / Google accounts limit reached (max ${maxGoogleAccounts} accounts).`
-          });
-        }
-        account = {
-          id: 'acc_g_' + Date.now(),
-          username: googlePayload.email.split('@')[0],
-          email: googlePayload.email,
-          role: 'user',
-          auth_provider: 'google',
-          google_id: googlePayload.googleId,
-          display_name: googlePayload.name,
-          avatar_url: googlePayload.picture,
-        };
-        saveFallbackAccount(account);
+
+      // Auto-create new user account for family & friends
+      account = await createDbAccount({
+        username: googlePayload.email.split('@')[0],
+        email: googlePayload.email,
+        role: 'user',
+        authProvider: 'google',
+        googleId: googlePayload.googleId,
+        displayName: googlePayload.name,
+        avatarUrl: googlePayload.picture,
+      });
+    } else {
+      // Link or refresh Google info if needed
+      if (!account.google_id && !account.googleId) {
+        await queryDb('UPDATE accounts SET google_id = $1, auth_provider = \'google\', avatar_url = COALESCE(avatar_url, $2) WHERE id = $3', [
+          googlePayload.googleId, googlePayload.picture, account.id
+        ]);
+        account.google_id = googlePayload.googleId;
+        account.auth_provider = 'google';
       }
     }
 
@@ -260,11 +201,7 @@ app.post('/api/auth/google', async (req, res) => {
 // 3. Verify / Get Current User Endpoint
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    let account = null;
-    try {
-      account = await getDbAccountById(req.user.id);
-    } catch (e) {}
-
+    const account = await getDbAccountById(req.user.id);
     const userPayload = account ? {
       id: account.id,
       username: account.username,
@@ -291,18 +228,11 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 // List all accounts (Admin only)
 app.get('/api/admin/accounts', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    let accounts = [];
-    let googleAccountsCount = 0;
-    try {
-      accounts = await getAllDbAccounts();
-      googleAccountsCount = await countDbGoogleAccounts();
-    } catch (dbErr) {
-      console.warn('DB getAllAccounts failed, returning fallback accounts:', dbErr.message);
-      accounts = getFallbackAccounts();
-      googleAccountsCount = accounts.filter(a => a.authProvider === 'google' || a.auth_provider === 'google' || a.google_id || a.googleId).length;
-    }
+    const accounts = await getAllDbAccounts();
+    const googleAccountsCount = await countDbGoogleAccounts();
     res.json({ success: true, accounts, googleAccountsCount, maxGoogleAccounts: getMaxGoogleAccounts() });
   } catch (error) {
+    console.error('List accounts error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -323,46 +253,23 @@ app.post('/api/admin/accounts', authenticateToken, requireAdmin, async (req, res
       return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
     }
 
-    let existing = null;
-    try {
-      existing = await getDbAccountByUsername(username);
-    } catch (e) {
-      const fallbackAccs = getFallbackAccounts();
-      existing = fallbackAccs.find((a) => a.username.toLowerCase() === username.toLowerCase());
-    }
-
+    const existing = await getDbAccountByUsername(username);
     if (existing) {
       return res.status(400).json({ success: false, error: 'An account with this username already exists' });
     }
 
-    let newAccount = null;
-    try {
-      newAccount = await createDbAccount({
-        username,
-        password,
-        role: role === 'admin' ? 'admin' : 'user',
-        email,
-        authProvider: 'local',
-        displayName: displayName || username,
-      });
-    } catch (dbErr) {
-      console.warn('DB createAccount failed, using fallback:', dbErr.message);
-      const hashedPassword = await hashPassword(password);
-      newAccount = {
-        id: 'acc_' + Date.now(),
-        username,
-        email,
-        password_hash: hashedPassword,
-        role: role === 'admin' ? 'admin' : 'user',
-        auth_provider: 'local',
-        display_name: displayName || username,
-        created_at: new Date().toISOString(),
-      };
-      saveFallbackAccount(newAccount);
-    }
+    const newAccount = await createDbAccount({
+      username,
+      password,
+      role: role === 'admin' ? 'admin' : 'user',
+      email,
+      authProvider: 'local',
+      displayName: displayName || username,
+    });
 
     res.json({ success: true, account: newAccount });
   } catch (error) {
+    console.error('Create account error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -375,16 +282,10 @@ app.delete('/api/admin/accounts/:id', authenticateToken, requireAdmin, async (re
       return res.status(400).json({ success: false, error: 'You cannot delete your own active admin account' });
     }
 
-    try {
-      await deleteDbAccount(id);
-    } catch (dbErr) {
-      console.warn('DB deleteAccount failed, using fallback:', dbErr.message);
-      const accounts = getFallbackAccounts().filter((a) => a.id !== id);
-      fs.writeFileSync(path.join(__dirname, '../data/accounts.json'), JSON.stringify(accounts, null, 2));
-    }
-
+    await deleteDbAccount(id);
     res.json({ success: true });
   } catch (error) {
+    console.error('Delete account error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -402,13 +303,7 @@ app.put('/api/admin/accounts/:id/password', authenticateToken, requireAdmin, asy
       });
     }
 
-    try {
-      await updateDbAccountPassword(id, password.trim());
-    } catch (dbErr) {
-      console.warn('DB updateAccountPassword failed, using fallback:', dbErr.message);
-      await updateFallbackAccountPassword(id, password.trim());
-    }
-
+    await updateDbAccountPassword(id, password.trim());
     res.json({ success: true, message: '密码修改成功 / Password changed successfully' });
   } catch (error) {
     console.error('Change password error:', error);
