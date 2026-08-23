@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWithGemini } from './geminiService.js';
+import { processAudioWithGemini, processTextWithGemini, validateAndFormatLogWithGemini, generateOrTranslateNotesWithGemini } from './geminiService.js';
 import { 
   getFallbackLogs, saveFallbackLogEntry, deleteFallbackLogEntry, updateFallbackLogEntry,
   getFallbackTimers, startFallbackFeedingSession, stopFallbackFeedingSession, resetFallbackFeedingSession, openFallbackFormulaBottle, finishFallbackFormulaBottle,
@@ -518,7 +518,7 @@ app.get('/api/logs/export', authenticateToken, async (req, res) => {
       const headers = [
         'ID', 'Date', 'Time', 'Category', 'SubCategory',
         'Amount', 'Duration', 'Start Time', 'End Time',
-        'Chinese Record', 'English Summary', 'Notes', 'Attachments Count'
+        'Chinese Description', 'English Description', 'Chinese Notes', 'English Notes', 'Notes', 'Attachments Count'
       ];
 
       const csvRows = [headers.join(',')];
@@ -538,6 +538,8 @@ app.get('/api/logs/export', authenticateToken, async (req, res) => {
           escapeCsv(log.endTime || ''),
           escapeCsv(log.originalZh || ''),
           escapeCsv(log.summaryEn || ''),
+          escapeCsv(log.notesZh || ''),
+          escapeCsv(log.notesEn || ''),
           escapeCsv(log.notes || ''),
           escapeCsv((log.attachments || []).length)
         ];
@@ -575,6 +577,20 @@ app.post('/api/logs', authenticateToken, uploadPhotos.array('photos', 5), async 
         }
       } else {
         logData = logData.logData;
+      }
+    }
+
+    // Process & translate notes into pure Chinese and pure English
+    const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+    if (!logData.notesZh || !logData.notesEn) {
+      try {
+        const { notesZh, notesEn } = await generateOrTranslateNotesWithGemini(logData, apiKey);
+        logData.notesZh = notesZh;
+        logData.notesEn = notesEn;
+      } catch (noteErr) {
+        console.warn('Notes translation/summarization warning:', noteErr.message);
+        logData.notesZh = logData.notes || logData.originalZh || '';
+        logData.notesEn = logData.notes || logData.summaryEn || '';
       }
     }
 
@@ -617,6 +633,18 @@ app.put('/api/logs/:id', authenticateToken, uploadPhotos.array('photos', 5), asy
       } else {
         logData = logData.logData;
       }
+    }
+
+    // Process & translate notes into pure Chinese and pure English on edit
+    const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+    try {
+      const { notesZh, notesEn } = await generateOrTranslateNotesWithGemini(logData, apiKey);
+      logData.notesZh = notesZh;
+      logData.notesEn = notesEn;
+    } catch (noteErr) {
+      console.warn('Notes translation/summarization warning on edit:', noteErr.message);
+      logData.notesZh = logData.notes || logData.originalZh || '';
+      logData.notesEn = logData.notes || logData.summaryEn || '';
     }
 
     let removedAttachmentIds = [];

@@ -2,6 +2,91 @@ import React, { useState, useMemo } from 'react';
 import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle, Ruler } from 'lucide-react';
 import { parseDurationToMinutes } from '../utils/timeUtils';
 
+const SUBCATEGORY_META = {
+  formula: { zh: '配方奶', en: 'Formula', icon: '🍼' },
+  breastmilk: { zh: '母乳', en: 'Breastmilk', icon: '🤱' },
+  solids: { zh: '辅食', en: 'Solids', icon: '🥣' },
+  nap: { zh: '午睡/小憩', en: 'Nap', icon: '😴' },
+  night_sleep: { zh: '夜间睡眠', en: 'Night Sleep', icon: '🌙' },
+  wet: { zh: '小便', en: 'Pee', icon: '🟡' },
+  dirty: { zh: '大便', en: 'Poop', icon: '💩' },
+  both: { zh: '尿+便', en: 'Pee & Poop', icon: '🚽' },
+  weight: { zh: '体重', en: 'Weight', icon: '⚖️' },
+  height: { zh: '身高', en: 'Height', icon: '📏' },
+  medicine: { zh: '用药', en: 'Medicine', icon: '💊' },
+  temperature: { zh: '测体温', en: 'Temp Check', icon: '🌡️' },
+  vaccine: { zh: '疫苗', en: 'Vaccine', icon: '💉' },
+  symptom: { zh: '症状观察', en: 'Symptom', icon: '🩺' },
+  doctor: { zh: '看医生', en: 'Doctor', icon: '🏥' },
+  tummy_time: { zh: '趴卧抬头', en: 'Tummy Time', icon: '👶' },
+  play: { zh: '游戏/玩具', en: 'Play', icon: '🧸' },
+  outdoor: { zh: '户外/散步', en: 'Outdoor', icon: '🌳' },
+  bath: { zh: '洗澡/抚触', en: 'Bath & Massage', icon: '🛁' },
+  reading: { zh: '早教/绘本', en: 'Reading', icon: '📖' },
+  other: { zh: '其他', en: 'Other', icon: '📝' },
+};
+
+function formatSubcategoryInfo(subCat, isZhLang) {
+  if (!subCat) return null;
+  const item = SUBCATEGORY_META[subCat];
+  if (item) {
+    return {
+      label: isZhLang ? item.zh : item.en,
+      icon: item.icon,
+    };
+  }
+  return { label: subCat, icon: '🏷️' };
+}
+
+function getLogAmountInfo(log) {
+  if (!log.amount) return null;
+  const amt = String(log.amount).trim();
+  if (!amt) return null;
+
+  let icon = '📊';
+  let color = 'var(--text-main)';
+
+  if (log.category === 'feeding' || amt.includes('ml') || amt.includes('oz')) {
+    icon = '🍼';
+    color = 'var(--feeding-color)';
+  } else if (log.category === 'health' || amt.includes('°C') || amt.includes('℃') || amt.includes('度')) {
+    if (log.subCategory === 'temperature' || amt.includes('°C') || amt.includes('℃') || amt.includes('度')) {
+      icon = '🌡️';
+      color = '#f59e0b';
+    } else if (log.subCategory === 'medicine') {
+      icon = '💊';
+      color = 'var(--health-color)';
+    } else if (log.subCategory === 'vaccine') {
+      icon = '💉';
+      color = 'var(--health-color)';
+    } else if (log.subCategory === 'doctor') {
+      icon = '🏥';
+      color = 'var(--health-color)';
+    } else {
+      icon = '🩺';
+      color = 'var(--health-color)';
+    }
+  } else if (log.category === 'growth' || amt.includes('cm') || amt.includes('kg') || amt.includes('in') || amt.includes('lbs')) {
+    if (log.subCategory === 'height' || amt.includes('cm') || amt.includes('in')) {
+      icon = '📏';
+    } else {
+      icon = '⚖️';
+    }
+    color = '#10b981';
+  } else if (log.category === 'sleep') {
+    icon = '🌙';
+    color = 'var(--sleep-color)';
+  } else if (log.category === 'diaper') {
+    icon = '🧷';
+    color = 'var(--diaper-color)';
+  } else if (log.category === 'activity') {
+    icon = '🎈';
+    color = '#ec4899';
+  }
+
+  return { icon, color, text: amt };
+}
+
 export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) {
 
   const isZh = lang === 'zh';
@@ -406,12 +491,34 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
 
                     return (
                       <div key={log.id} className="timeline-item">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span className={`badge ${getBadgeClass(log.category)}`}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                            <span className={`badge ${getBadgeClass(log.category)}`} style={{ textTransform: 'uppercase' }}>
                               {getCategoryIcon(log.category)}
                               {log.category}
                             </span>
+
+                            {log.subCategory && (() => {
+                              const subInfo = formatSubcategoryInfo(log.subCategory, isZh);
+                              if (!subInfo) return null;
+                              return (
+                                <span style={{
+                                  fontSize: '0.75rem',
+                                  fontWeight: 700,
+                                  background: 'rgba(255, 255, 255, 0.08)',
+                                  padding: '0.2rem 0.55rem',
+                                  borderRadius: '0.5rem',
+                                  color: 'var(--text-main)',
+                                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                }}>
+                                  <span>{subInfo.icon}</span>
+                                  <span>{subInfo.label}</span>
+                                </span>
+                              );
+                            })()}
                             
                             <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>
                               ⏱️ {timingDisplay}
@@ -424,7 +531,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                             )}
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
                             {log.syncedToSheet && (
                               <span title="Synced to Google Sheet" style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center' }}>
                                 <CloudUpload size={14} />
@@ -437,7 +544,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                                 border: '1px solid rgba(99, 102, 241, 0.3)',
                                 color: '#a5b4fc',
                                 cursor: 'pointer',
-                                padding: '0.25rem 0.4rem',
+                                padding: '0.25rem 0.45rem',
                                 borderRadius: '6px',
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -453,7 +560,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
 
                             <button
                               onClick={() => setLogToDelete(log)}
-                              style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', opacity: 0.7 }}
+                              style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', opacity: 0.7, padding: '0.25rem' }}
                               title={isZh ? '删除记录' : 'Delete entry'}
                             >
                               <Trash2 size={14} />
@@ -462,22 +569,49 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
 
                         </div>
 
-                        <div style={{ marginTop: '0.4rem', fontSize: '0.95rem', fontWeight: 600 }}>
-                          {log.originalZh || log.summaryEn}
-                        </div>
+                        {/* Display Language-Selected Notes (Chinese Notes or English Notes) */}
+                        {(() => {
+                          const noteDisplay = isZh
+                            ? (log.notesZh || log.notes || log.originalZh)
+                            : (log.notesEn || log.notes || log.summaryEn);
 
-                        {log.originalZh && log.summaryEn && (
-                          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                            {log.summaryEn}
-                          </div>
-                        )}
+                          if (!noteDisplay || noteDisplay === 'N/A') return null;
 
-                        {(log.amount || log.duration) && (
-                          <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.35rem', fontSize: '0.8rem' }}>
-                            {log.amount && <span style={{ color: log.category === 'growth' ? '#10b981' : 'var(--feeding-color)', fontWeight: 600 }}>{log.category === 'growth' ? '📏' : '🥛'} {log.amount}</span>}
-                            {log.duration && <span style={{ color: 'var(--sleep-color)', fontWeight: 600 }}>⏱️ {log.duration}</span>}
-                          </div>
-                        )}
+                          return (
+                            <div style={{
+                              marginTop: '0.45rem',
+                              fontSize: '0.92rem',
+                              fontWeight: 500,
+                              color: 'var(--text-main)',
+                              lineHeight: 1.45,
+                            }}>
+                              {noteDisplay}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Amount & Duration with correct contextual icons */}
+                        {(() => {
+                          const amtInfo = getLogAmountInfo(log);
+                          if (!amtInfo && !log.duration) return null;
+
+                          return (
+                            <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.35rem', fontSize: '0.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                              {amtInfo && (
+                                <span style={{ color: amtInfo.color, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span>{amtInfo.icon}</span>
+                                  <span>{amtInfo.text}</span>
+                                </span>
+                              )}
+                              {log.duration && (
+                                <span style={{ color: 'var(--sleep-color)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <span>⏱️</span>
+                                  <span>{log.duration}</span>
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Photo Attachments Gallery */}
                         {attachments.length > 0 && (
@@ -527,7 +661,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
               {isZh ? '确认删除此记录？' : 'Confirm Delete Log?'}
             </h4>
             <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-              {logToDelete.originalZh || logToDelete.summaryEn || (isZh ? '记录删除后将无法恢复。' : 'This entry will be permanently removed.')}
+              {(isZh ? (logToDelete.notesZh || logToDelete.notes || logToDelete.originalZh) : (logToDelete.notesEn || logToDelete.notes || logToDelete.summaryEn)) || (isZh ? '记录删除后将无法恢复。' : 'This entry will be permanently removed.')}
             </p>
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>

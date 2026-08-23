@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS action_logs (
     summary_en TEXT,
     original_zh TEXT,
     notes TEXT,
+    notes_zh TEXT,
+    notes_en TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

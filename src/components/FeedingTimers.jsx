@@ -153,8 +153,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
         endTime: endTimeIso,
         duration: durationStr,
         amount: '',
-        summaryEn: `Sleep session (${durationStr})`,
-        originalZh: `宝宝睡眠 (${durationStr})`,
+        summaryEn: 'N/A',
+        originalZh: 'N/A',
         notes: '',
       });
     } else {
@@ -165,8 +165,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
         endTime: endTimeIso,
         duration: durationStr,
         amount: '',
-        summaryEn: `Formula feeding session (${durationStr})`,
-        originalZh: `配方奶喂养 (${durationStr})`,
+        summaryEn: 'N/A',
+        originalZh: 'N/A',
         notes: '',
       });
     }

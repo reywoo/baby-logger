@@ -134,7 +134,7 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
     const headers = [
       'ID', 'Date', 'Time', 'Category', 'SubCategory',
       'Amount', 'Duration', 'Start Time', 'End Time',
-      'Chinese Record', 'English Summary', 'Notes', 'Attachments Count'
+      'Chinese Description', 'English Description', 'Chinese Notes', 'English Notes', 'Notes', 'Attachments Count'
     ];
 
     const csvRows = [headers.join(',')];
@@ -154,6 +154,8 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
         escapeCsv(log.endTime || ''),
         escapeCsv(log.originalZh || ''),
         escapeCsv(log.summaryEn || ''),
+        escapeCsv(log.notesZh || ''),
+        escapeCsv(log.notesEn || ''),
         escapeCsv(log.notes || ''),
         escapeCsv((log.attachments || []).length)
       ];

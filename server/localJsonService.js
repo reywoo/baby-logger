@@ -58,6 +58,8 @@ export async function saveFallbackLogEntry(logData) {
     summaryEn: logData.summaryEn || '',
     originalZh: logData.originalZh || '',
     notes: logData.notes || '',
+    notesZh: logData.notesZh || '',
+    notesEn: logData.notesEn || '',
     attachments: logData.attachments || [],
   };
 

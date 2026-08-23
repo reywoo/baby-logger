@@ -128,9 +128,9 @@ ${subCatRules}
    - "startTime": ISO timestamp when the action started (e.g., if mentioned "at 2pm" or "30 mins ago", calculate against current ISO time. Otherwise default to current ISO time).
    - "endTime": ISO timestamp when the action ended. CRITICAL: For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime", and set "duration" to null.
    - For interval categories ("feeding", "sleep", "activity", "other"), set "endTime" and "duration" when mentioned or calculated.
-5. Provide a clear, natural English summary ("summaryEn") of what happened.
-6. Provide the exact Chinese text or transcript ("originalZh") corresponding to what was said (translated to natural Chinese if spoken in English).
-7. Extract notes or extra details.
+5. "summaryEn" (English Description): Provide a clean, natural, slightly formatted and corrected English sentence reflecting what the speaker said in audio (fix mumbling, hesitations, or disfluencies into clear natural sentences).
+6. "originalZh" (Chinese Description): Provide a clean, natural, slightly formatted and corrected Chinese sentence reflecting what the speaker said in audio (fix mumbling, hesitations, or disfluencies into clear natural sentences).
+7. "notes": Extract any extra specific details or remarks mentioned, or null if nothing extra was noted.
 
 Return ONLY a valid JSON object matching this exact structure:
 {
@@ -140,8 +140,8 @@ Return ONLY a valid JSON object matching this exact structure:
   "duration": "1 hr or null",
   "startTime": "ISO 8601 string",
   "endTime": "ISO 8601 string",
-  "summaryEn": "English description of the log entry",
-  "originalZh": "Chinese transcript or equivalent description",
+  "summaryEn": "Formatted English description of what was spoken",
+  "originalZh": "Formatted Chinese description of what was spoken",
   "notes": "Additional details or null"
 } `;
 
@@ -193,7 +193,7 @@ export async function processTextWithGemini(textInput, userApiKey, subCategories
 
   const prompt = `You are a family assistant & baby log parser. Current ISO time is: ${currentIso}.
 ${babyContext}
-Parse this user log entry: "${textInput}". The text may be in Chinese, English, or mixed.
+Parse this user log text entry: "${textInput}". The text may be in Chinese, English, or mixed.
 
 Extract timing & category details:
 - CRITICAL SINGLE EVENT RULE: Each input text MUST produce exactly ONE single log entry. If the user text mentions multiple actions or events (e.g. "changed diaper and baby drank 120ml milk"), ONLY extract and parse the FIRST clearly identifiable action and ignore all subsequent actions. Do NOT attempt to output multiple records or combine multiple events.
@@ -203,6 +203,8 @@ ${subCatRules}
   - CRITICAL: You MUST choose one of the exact subcategories listed above for the chosen category. Do NOT invent or output new custom subcategories.
 - "startTime": ISO timestamp of when action started.
 - "endTime": ISO timestamp of when action ended. For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime" and set "duration" to null.
+- Note: Since this input is text-based (not audio), set "summaryEn" to "N/A" and "originalZh" to "N/A".
+- "notes": Put the user's entered text or any extra notes here.
 
 Return ONLY a valid JSON object:
 {
@@ -212,9 +214,9 @@ Return ONLY a valid JSON object:
   "duration": "e.g. 1 hr or null",
   "startTime": "ISO 8601 string",
   "endTime": "ISO 8601 string",
-  "summaryEn": "Clear English summary",
-  "originalZh": "Original text or natural Chinese translation",
-  "notes": "Any extra notes or null"
+  "summaryEn": "N/A",
+  "originalZh": "N/A",
+  "notes": "${textInput.replace(/"/g, "'")}"
 }`;
 
   try {
@@ -226,6 +228,103 @@ Return ONLY a valid JSON object:
   } catch (error) {
     console.error('Gemini Text Processing Error:', error);
     throw new Error(`Failed to process text with Gemini: ${error.message}`);
+  }
+}
+
+/**
+ * Generate or translate notes into pure Chinese and pure English versions using Gemini
+ */
+export async function generateOrTranslateNotesWithGemini(logData, userApiKey) {
+  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+  const userNotes = (logData?.notes || '').trim();
+  const category = logData?.category || 'other';
+  const subCategory = logData?.subCategory || 'other';
+  const amount = logData?.amount || '';
+  const duration = logData?.duration || '';
+  const descZh = logData?.originalZh && logData.originalZh !== 'N/A' ? logData.originalZh.trim() : '';
+  const descEn = logData?.summaryEn && logData.summaryEn !== 'N/A' ? logData.summaryEn.trim() : '';
+
+  // Fallback defaults if no API key or AI call fails
+  const fallbackChinese = userNotes || descZh || `${category} ${subCategory} ${amount || duration}`.trim();
+  const fallbackEnglish = userNotes || descEn || `${category} ${subCategory} ${amount || duration}`.trim();
+
+  if (!apiKey) {
+    return {
+      notesZh: fallbackChinese,
+      notesEn: fallbackEnglish,
+    };
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  let prompt = '';
+  if (userNotes) {
+    // Case 1: User manually entered notes (may be Chinese, English, or mixed)
+    prompt = `You are a professional multilingual translator and baby log formatter.
+The user manually entered the following notes for a baby activity log (which may be in Chinese, English, or mixed):
+"${userNotes}"
+
+Context of the log:
+- Category: ${category}
+- SubCategory: ${subCategory}
+- Amount: ${amount || 'N/A'}
+- Duration: ${duration || 'N/A'}
+
+Your task: Convert and translate these notes into TWO distinct, pure-language versions:
+1. "notesZh": A natural, clean Chinese note containing primarily Chinese characters and numbers/units.
+   - PROPER NOUNS & HARD-TO-TRANSLATE NAMES RULE: For nouns that are hard to translate or specific to a locale (such as place names, park names, street names, hospitals, doctor/person names, brand/clinic names), you can allow the original English name in parentheses/brackets after or alongside the Chinese translation.
+     Examples:
+     * English: "Body temperature was taken at Mill Pond Park" -> Chinese: "在米尔池塘公园(Mill Pond Park)量的体温"
+     * English: "Body temperature was taken by Dr. McNaughton" -> Chinese: "麦克诺顿医生(Dr. McNaughton)给量的体温"
+     * English: "Prescription from Seattle Children's Hospital" -> Chinese: "西雅图儿童医院(Seattle Children's Hospital)开的处方"
+2. "notesEn": A natural, clean English note containing ONLY English words and numbers/units (NO mixed Chinese characters).
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "notesZh": "Chinese notes",
+  "notesEn": "English notes"
+}`;
+  } else {
+    // Case 2: Notes field was left empty -> generate short concise summary from description or parameters
+    prompt = `You are a baby log assistant. A log record is being saved without custom notes.
+Record details:
+- Category: ${category}
+- SubCategory: ${subCategory}
+- Amount: ${amount || 'N/A'}
+- Duration: ${duration || 'N/A'}
+- Chinese Audio Description: ${descZh || 'N/A'}
+- English Audio Description: ${descEn || 'N/A'}
+
+Your task: Generate a short, concise summary note of what happened in both pure Chinese and pure English:
+- If Audio Description is available and not 'N/A', summarize it into a concise note.
+- If Audio Description is 'N/A', generate a natural concise note based on the category, subcategory, and amount/duration (e.g. '配方奶 120ml' / 'Formula 120ml', or '换小便尿布' / 'Pee diaper change').
+- "notesZh": A concise, natural Chinese summary. For hard-to-translate proper nouns (place names, street names, doctor/person names, clinics), original English names in parentheses/brackets are allowed (e.g. "米尔池塘公园(Mill Pond Park)", "麦克诺顿医生(Dr. McNaughton)").
+- "notesEn": A concise, natural English summary (ONLY English).
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "notesZh": "concise Chinese summary note",
+  "notesEn": "concise English summary note"
+}`;
+  }
+
+  try {
+    const contents = [{ role: 'user', parts: [{ text: prompt }] }];
+    const config = { responseMimeType: 'application/json' };
+
+    const response = await generateWithGemini(ai, contents, config);
+    const parsed = extractJsonObject(response.text);
+
+    return {
+      notesZh: parsed.notesZh ? String(parsed.notesZh).trim() : fallbackChinese,
+      notesEn: parsed.notesEn ? String(parsed.notesEn).trim() : fallbackEnglish,
+    };
+  } catch (error) {
+    console.error('Gemini Notes Summarization/Translation Error:', error);
+    return {
+      notesZh: fallbackChinese,
+      notesEn: fallbackEnglish,
+    };
   }
 }
 

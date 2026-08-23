@@ -97,8 +97,8 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
   const [endTime, setEndTime] = useState(initialEnd);
   const [duration, setDuration] = useState(initialDur);
 
-  const [summaryEn, setSummaryEn] = useState(data.summaryEn || '');
-  const [originalZh, setOriginalZh] = useState(data.originalZh || '');
+  const [summaryEn, setSummaryEn] = useState(data.summaryEn ? data.summaryEn : 'N/A');
+  const [originalZh, setOriginalZh] = useState(data.originalZh ? data.originalZh : 'N/A');
   const [notes, setNotes] = useState(data.notes || '');
 
   const [existingAttachments, setExistingAttachments] = useState(data.attachments || []);
@@ -198,7 +198,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           endIso = startIso;
         }
 
-        const hasAmount = category === 'feeding' || category === 'health' || category === 'growth';
+        const hasAmount = category === 'feeding' || (category === 'health' && subCategory === 'temperature') || category === 'growth';
         let finalAmount = hasAmount ? amount.trim() : '';
 
         if (category === 'feeding' && finalAmount) {
@@ -503,27 +503,23 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
                 </div>
               )}
             </div>
-          ) : category === 'health' ? (
+          ) : category === 'health' && subCategory === 'temperature' ? (
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                💊 {subCategory === 'temperature'
-                  ? (lang === 'zh' ? '体温数值 (纯数字，单位 °C)' : 'Temperature Value (Numeric only, in °C)')
-                  : (lang === 'zh' ? '剂量 / 用药说明 (Dosage / Details)' : 'Dosage / Details')}
+                🌡️ {lang === 'zh' ? '体温数值 (纯数字，单位 °C)' : 'Temperature Value (Numeric only, in °C)'}
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <input
                   type="text"
                   className="input-field"
-                  placeholder={subCategory === 'temperature' ? "e.g. 36.8" : "e.g. 5 ml"}
+                  placeholder="e.g. 36.8"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   style={{ flex: 1, borderColor: hasInvalidChars ? '#ef4444' : undefined }}
                 />
-                {subCategory === 'temperature' && (
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.55rem 0.75rem', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '0.5rem', border: '1px solid var(--card-border)', color: 'var(--primary-accent)' }}>
-                    °C
-                  </span>
-                )}
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.55rem 0.75rem', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '0.5rem', border: '1px solid var(--card-border)', color: 'var(--primary-accent)' }}>
+                  °C
+                </span>
               </div>
               {hasInvalidChars && (
                 <div style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.3rem', fontWeight: 600 }}>
@@ -645,45 +641,62 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           </div>
 
 
-          {/* Chinese Content */}
+          {/* Chinese Description */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              🇨🇳 {t.chineseTextLabel}
+              🇨🇳 {t.chineseTextLabel || (lang === 'zh' ? '中文描述 (Chinese Description)' : 'Chinese Description')}
             </label>
             <textarea
               className="input-field"
               rows={2}
-              value={originalZh}
-              onChange={(e) => setOriginalZh(e.target.value)}
-              placeholder="中文记录..."
+              value={originalZh || 'N/A'}
+              readOnly
+              disabled
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                cursor: 'not-allowed',
+                color: 'var(--text-muted)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
+                opacity: 0.8,
+                resize: 'none',
+              }}
+              placeholder="N/A"
             />
           </div>
 
-          {/* English Summary */}
+          {/* English Description */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              🇺🇸 {t.englishTextLabel}
+              🇺🇸 {t.englishTextLabel || (lang === 'zh' ? '英文描述 (English Description)' : 'English Description')}
             </label>
             <input
               type="text"
               className="input-field"
-              value={summaryEn}
-              onChange={(e) => setSummaryEn(e.target.value)}
-              placeholder="English summary..."
+              value={summaryEn || 'N/A'}
+              readOnly
+              disabled
+              style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                cursor: 'not-allowed',
+                color: 'var(--text-muted)',
+                borderColor: 'rgba(255, 255, 255, 0.08)',
+                opacity: 0.8,
+              }}
+              placeholder="N/A"
             />
           </div>
 
           {/* Notes */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              {t.notesLabel}
+              📝 {t.notesLabel || (lang === 'zh' ? '备注 Notes (中/英/混合)' : 'Notes (CN/EN/Mixed)')}
             </label>
             <input
               type="text"
               className="input-field"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Additional details..."
+              placeholder={lang === 'zh' ? '可输入中文、英文或中英混合备注（保存时将自动翻译为纯中文与纯英文）...' : 'Enter notes in Chinese, English, or mixed (auto-translates on save)...'}
             />
           </div>
         </div>

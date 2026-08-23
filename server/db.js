@@ -134,10 +134,14 @@ export async function initDb() {
             summary_en TEXT,
             original_zh TEXT,
             notes TEXT,
+            notes_zh TEXT,
+            notes_en TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL;
+        ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS notes_zh TEXT;
+        ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS notes_en TEXT;
 
         CREATE TABLE IF NOT EXISTS action_attachments (
             id SERIAL PRIMARY KEY,
@@ -278,6 +282,8 @@ export async function getDbLogs(accountId = null) {
       l.summary_en AS "summaryEn",
       l.original_zh AS "originalZh",
       l.notes,
+      l.notes_zh AS "notesZh",
+      l.notes_en AS "notesEn",
       l.created_at AS "createdAt",
       COALESCE(
         json_agg(
@@ -358,6 +364,8 @@ export async function getDbLogsFiltered({ accountId = null, startDate, endDate, 
       l.summary_en AS "summaryEn",
       l.original_zh AS "originalZh",
       l.notes,
+      l.notes_zh AS "notesZh",
+      l.notes_en AS "notesEn",
       l.created_at AS "createdAt",
       COALESCE(
         json_agg(
@@ -436,18 +444,20 @@ export async function saveDbLogEntry(logData, attachments = [], accountId = null
     const summaryEn = logData.summaryEn || '';
     const originalZh = logData.originalZh || '';
     const notes = logData.notes || '';
+    const notesZh = logData.notesZh || '';
+    const notesEn = logData.notesEn || '';
 
     const insertLogQuery = `
       INSERT INTO action_logs (
         id, category, sub_category, start_time, end_time, recorded_at,
-        amount, duration, summary_en, original_zh, notes, account_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        amount, duration, summary_en, original_zh, notes, notes_zh, notes_en, account_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *;
     `;
 
     await client.query(insertLogQuery, [
       id, category, subCategory, startTime, endTime, recordedAt,
-      amount, duration, summaryEn, originalZh, notes, accountId || 'account_default_yoyo',
+      amount, duration, summaryEn, originalZh, notes, notesZh, notesEn, accountId || 'account_default_yoyo',
     ]);
 
     const savedAttachments = [];
@@ -493,6 +503,8 @@ export async function saveDbLogEntry(logData, attachments = [], accountId = null
       summaryEn,
       originalZh,
       notes,
+      notesZh,
+      notesEn,
       attachments: savedAttachments,
     };
   } catch (err) {
@@ -537,6 +549,8 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
     const summaryEn = logData.summaryEn || '';
     const originalZh = logData.originalZh || '';
     const notes = logData.notes || '';
+    const notesZh = logData.notesZh !== undefined ? logData.notesZh : '';
+    const notesEn = logData.notesEn !== undefined ? logData.notesEn : '';
 
     const updateLogQuery = `
       UPDATE action_logs
@@ -549,14 +563,16 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
           summary_en = $7,
           original_zh = $8,
           notes = $9,
+          notes_zh = $10,
+          notes_en = $11,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10 AND ($11::text IS NULL OR account_id = $11)
+      WHERE id = $12 AND ($13::text IS NULL OR account_id = $13)
       RETURNING *;
     `;
 
     const res = await client.query(updateLogQuery, [
       category, subCategory, startTime, endTime,
-      amount, duration, summaryEn, originalZh, notes, id, accountId
+      amount, duration, summaryEn, originalZh, notes, notesZh, notesEn, id, accountId
     ]);
 
     if (res.rows.length === 0) {
@@ -629,6 +645,8 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
       summaryEn: updatedRow.summary_en,
       originalZh: updatedRow.original_zh,
       notes: updatedRow.notes,
+      notesZh: updatedRow.notes_zh,
+      notesEn: updatedRow.notes_en,
       attachments,
     };
   } catch (err) {
