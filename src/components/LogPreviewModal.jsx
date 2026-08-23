@@ -354,20 +354,20 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
                 else setSubCategory('other');
               }}
             >
-              <option value="feeding">🍼 {lang === 'zh' ? '喂养 (Feeding)' : 'Feeding'}</option>
-              <option value="sleep">💤 {lang === 'zh' ? '睡眠 (Sleep)' : 'Sleep'}</option>
-              <option value="diaper">🧷 {lang === 'zh' ? '换尿布 (Diaper)' : 'Diaper'}</option>
-              <option value="growth" disabled={!birthDate}>📏 {lang === 'zh' ? '生长发育 (Growth)' : 'Growth'}{!birthDate ? (lang === 'zh' ? ' (需先设置生日)' : ' (Set Birthday First)') : ''}</option>
-              <option value="health">💊 {lang === 'zh' ? '健康/用药 (Health)' : 'Health'}</option>
-              <option value="activity">🎈 {lang === 'zh' ? '日常/游戏 (Activity)' : 'Activity'}</option>
-              <option value="other">📝 {lang === 'zh' ? '其他 (Other)' : 'Other'}</option>
+              <option value="feeding">🍼 {lang === 'zh' ? '喂养' : 'Feeding'}</option>
+              <option value="sleep">💤 {lang === 'zh' ? '睡眠' : 'Sleep'}</option>
+              <option value="diaper">🧷 {lang === 'zh' ? '换尿布' : 'Diaper'}</option>
+              <option value="growth" disabled={!birthDate}>📏 {lang === 'zh' ? '生长发育' : 'Growth'}{!birthDate ? (lang === 'zh' ? ' (需先设置生日)' : ' (Set Birthday First)') : ''}</option>
+              <option value="health">💊 {lang === 'zh' ? '健康/用药' : 'Health'}</option>
+              <option value="activity">🎈 {lang === 'zh' ? '日常/游戏' : 'Activity'}</option>
+              <option value="other">📝 {lang === 'zh' ? '其他' : 'Other'}</option>
             </select>
           </div>
 
           {/* Sub-Category Pills for Active Category */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.36rem' }}>
-              🏷️ {lang === 'zh' ? '子类别 (Subcategory)' : 'Subcategory'}
+              🏷️ {lang === 'zh' ? '子类别' : 'Subcategory'}
             </label>
 
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -399,7 +399,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           {isInstantCategory ? (
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                ⏱️ {lang === 'zh' ? '记录时间 (Event Time)' : 'Event Time'}
+                ⏱️ {lang === 'zh' ? '记录时间' : 'Event Time'}
               </label>
               <input
                 type="datetime-local"
@@ -412,7 +412,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
             <div className="responsive-grid-2col">
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                  ⏱️ {lang === 'zh' ? '开始时间 (Start Time)' : 'Start Time'}
+                  ⏱️ {lang === 'zh' ? '开始时间' : 'Start Time'}
                 </label>
                 <input
                   type="datetime-local"
@@ -423,7 +423,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
               </div>
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                  🏁 {lang === 'zh' ? '结束时间 (End Time)' : 'End Time'}
+                  🏁 {lang === 'zh' ? '结束时间' : 'End Time'}
                 </label>
                 <input
                   type="datetime-local"
@@ -440,7 +440,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
             <div className="responsive-grid-2col">
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-                  🍼 {t.amountLabel} {lang === 'zh' ? '(纯数字，单位 ml)' : '(Numeric only, in ml)'}
+                  🍼 {t.amountLabel} {lang === 'zh' ? '(单位 ml)' : '(in ml)'}
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <input
@@ -548,7 +548,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           {/* Photo Attachments Upload */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              📷 {lang === 'zh' ? '照片附件 (Photo Attachments)' : 'Photo Attachments'}
+              📷 {lang === 'zh' ? '照片附件' : 'Photo Attachments'}
             </label>
             
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
@@ -644,7 +644,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           {/* Chinese Description */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              🇨🇳 {t.chineseTextLabel || (lang === 'zh' ? '中文描述 (Chinese Description)' : 'Chinese Description')}
+              🇨🇳 {t.chineseTextLabel || (lang === 'zh' ? '中文描述' : 'Chinese Description')}
             </label>
             <textarea
               className="input-field"
@@ -667,7 +667,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           {/* English Description */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              🇺🇸 {t.englishTextLabel || (lang === 'zh' ? '英文描述 (English Description)' : 'English Description')}
+              🇺🇸 {t.englishTextLabel || (lang === 'zh' ? '英文描述' : 'English Description')}
             </label>
             <input
               type="text"
@@ -689,7 +689,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
           {/* Notes */}
           <div>
             <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>
-              📝 {t.notesLabel || (lang === 'zh' ? '备注 Notes (中/英/混合)' : 'Notes (CN/EN/Mixed)')}
+              📝 {t.notesLabel || (lang === 'zh' ? '备注' : 'Notes')}
             </label>
             <input
               type="text"

@@ -345,7 +345,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
             title={isSessionRunningOrEnded ? (lang === 'zh' ? '计时进行中，无法切换' : 'Session in progress') : ''}
           >
             <Milk size={16} style={{ color: activeSessionType === 'feeding' ? '#f472b6' : 'currentColor' }} />
-            <span>{lang === 'zh' ? '冲奶喂养 (Feeding)' : 'Feeding Session'}</span>
+            <span>{lang === 'zh' ? '冲奶喂养' : 'Feeding Session'}</span>
             {isSessionRunningOrEnded && activeSessionType !== 'feeding' && <Lock size={12} />}
           </button>
 
@@ -375,7 +375,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
             title={isSessionRunningOrEnded ? (lang === 'zh' ? '计时进行中，无法切换' : 'Session in progress') : ''}
           >
             <Moon size={16} style={{ color: activeSessionType === 'sleep' ? '#a78bfa' : 'currentColor' }} />
-            <span>{lang === 'zh' ? '睡眠计时 (Sleeping)' : 'Sleeping Session'}</span>
+            <span>{lang === 'zh' ? '睡眠计时' : 'Sleeping Session'}</span>
             {isSessionRunningOrEnded && activeSessionType !== 'sleep' && <Lock size={12} />}
           </button>
         </div>
@@ -386,7 +386,7 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
             {currentSessionType === 'feeding' ? (
               <>🍼 {lang === 'zh' ? '冲奶喂养计时 (固定1小时)' : 'Feeding Session (Fixed 1-Hour)'}</>
             ) : (
-              <>💤 {lang === 'zh' ? '宝宝睡眠计时 (无上限正计时)' : 'Sleeping Session (Elapsed Timer)'}</>
+              <>💤 {lang === 'zh' ? '宝宝睡眠计时' : 'Sleeping Session (Elapsed Timer)'}</>
             )}
           </h3>
         </div>
@@ -422,8 +422,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
               <Play size={20} fill="#fff" />
               <span>
                 {activeSessionType === 'feeding'
-                  ? (lang === 'zh' ? '开始喂养 (Start Feeding)' : 'Start Feeding Session')
-                  : (lang === 'zh' ? '开始睡眠 (Start Sleeping)' : 'Start Sleeping Session')}
+                  ? (lang === 'zh' ? '开始喂养' : 'Start Feeding Session')
+                  : (lang === 'zh' ? '开始睡眠' : 'Start Sleeping Session')}
               </span>
             </button>
           </div>
@@ -503,8 +503,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
               <Square size={18} fill="#fff" />
               <span>
                 {currentSessionType === 'feeding'
-                  ? (lang === 'zh' ? '停止喂养 (Stop Feeding)' : 'Stop Feeding Session')
-                  : (lang === 'zh' ? '结束睡眠 (End Sleeping)' : 'End Sleeping Session')}
+                  ? (lang === 'zh' ? '停止喂养' : 'Stop Feeding Session')
+                  : (lang === 'zh' ? '结束睡眠' : 'End Sleeping Session')}
               </span>
             </button>
           </div>
@@ -560,8 +560,8 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
                 <FileText size={18} />
                 <span>
                   {currentSessionType === 'sleep'
-                    ? (lang === 'zh' ? '填报睡眠记录 (Create Sleeping Record)' : 'Create Sleeping Record')
-                    : (lang === 'zh' ? '填报喂奶记录 (Create Feeding Record)' : 'Create Feeding Record')}
+                    ? (lang === 'zh' ? '填报睡眠记录' : 'Create Sleeping Record')
+                    : (lang === 'zh' ? '填报喂奶记录' : 'Create Feeding Record')}
                 </span>
               </button>
 

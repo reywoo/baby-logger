@@ -268,14 +268,14 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
-            <option value="all">✨ {isZh ? '全部类别 (All Categories)' : 'All Categories'}</option>
-            <option value="feeding">🍼 {isZh ? '喂养 (Feeding)' : 'Feeding'}</option>
-            <option value="sleep">💤 {isZh ? '睡眠 (Sleep)' : 'Sleep'}</option>
-            <option value="diaper">🧷 {isZh ? '换尿布 (Diaper)' : 'Diaper'}</option>
-            <option value="growth">📏 {isZh ? '生长发育 (Growth)' : 'Growth'}</option>
-            <option value="health">💊 {isZh ? '健康/用药 (Health)' : 'Health'}</option>
-            <option value="activity">🎈 {isZh ? '日常/游戏 (Activity)' : 'Activity'}</option>
-            <option value="other">📝 {isZh ? '其他 (Other)' : 'Other'}</option>
+            <option value="all">✨ {isZh ? '全部类别' : 'All Categories'}</option>
+            <option value="feeding">🍼 {isZh ? '喂养' : 'Feeding'}</option>
+            <option value="sleep">💤 {isZh ? '睡眠' : 'Sleep'}</option>
+            <option value="diaper">🧷 {isZh ? '换尿布' : 'Diaper'}</option>
+            <option value="growth">📏 {isZh ? '生长发育' : 'Growth'}</option>
+            <option value="health">💊 {isZh ? '健康/用药' : 'Health'}</option>
+            <option value="activity">🎈 {isZh ? '日常/游戏' : 'Activity'}</option>
+            <option value="other">📝 {isZh ? '其他' : 'Other'}</option>
           </select>
         </div>
 

@@ -264,6 +264,21 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     }
   };
 
+  const formatCategoryBadgeLabel = (cat) => {
+    if (isZh) {
+      switch (cat) {
+        case 'feeding': return '喂养';
+        case 'sleep': return '睡眠';
+        case 'diaper': return '换尿布';
+        case 'growth': return '生长发育';
+        case 'health': return '健康';
+        case 'activity': return '日常';
+        default: return '其他';
+      }
+    }
+    return String(cat || '').toUpperCase();
+  };
+
   const getDaySummary = (dayLogs) => {
     const fLogs = dayLogs.filter((l) => l.category === 'feeding');
     const milk = fLogs.reduce((sum, l) => {
@@ -281,8 +296,8 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
   };
 
   const getDateLabel = (key) => {
-    if (key === todayKey) return isZh ? '今天 Today' : 'Today';
-    if (key === yesterdayKey) return isZh ? '昨天 Yesterday' : 'Yesterday';
+    if (key === todayKey) return isZh ? '今天' : 'Today';
+    if (key === yesterdayKey) return isZh ? '昨天' : 'Yesterday';
 
     const parts = key.split('-');
     if (parts.length === 3) {
@@ -493,9 +508,9 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                       <div key={log.id} className="timeline-item">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                            <span className={`badge ${getBadgeClass(log.category)}`} style={{ textTransform: 'uppercase' }}>
+                            <span className={`badge ${getBadgeClass(log.category)}`} style={{ textTransform: isZh ? 'none' : 'uppercase' }}>
                               {getCategoryIcon(log.category)}
-                              {log.category}
+                              {formatCategoryBadgeLabel(log.category)}
                             </span>
 
                             {log.subCategory && (() => {
