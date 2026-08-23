@@ -720,7 +720,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
             {isValidating ? (
               <>
                 <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                <span>{lang === 'zh' ? 'Gemini 校验中...' : 'Gemini Checking...'}</span>
+                <span>{lang === 'zh' ? '睿仔云AI助理校验中...' : 'Reywoo AI Agent Checking...'}</span>
               </>
             ) : isSubmitting ? (
               <>
@@ -737,7 +737,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
         </div>
       </div>
 
-      {/* Gemini Validation Loading Spinner Overlay */}
+      {/* Validation Loading Spinner Overlay */}
       {isValidating && (
         <div className="modal-overlay" style={{ zIndex: 1150, background: 'rgba(0, 0, 0, 0.75)' }}>
           <div className="glass-panel" style={{ textAlign: 'center', padding: '2rem 1.75rem', maxWidth: '380px', width: '85%', borderRadius: '1rem' }}>
@@ -746,7 +746,7 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
             </div>
             <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
               <Sparkles size={18} style={{ color: 'var(--primary-accent)' }} />
-              {lang === 'zh' ? 'Gemini 智能校验中' : 'Gemini AI Validating'}
+              {lang === 'zh' ? '睿仔云AI助理智能校验中' : 'Reywoo AI Agent Validating'}
             </h4>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               {lang === 'zh' ? '正在检查数据合理性与规范格式...' : 'Checking data sanity and standardizing formatting...'}

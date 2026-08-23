@@ -71,7 +71,7 @@ export default function GoogleSheetSetup({ apiKey, setApiKey, webhookUrl, setWeb
         <br />
         1. {lang === 'zh' ? '点击主页大麦克风图标直接说话（支持中文、粤语、英文及混合方言）。' : 'Tap the giant mic on the main page to speak (supports Chinese, English, dialects).'}
         <br />
-        2. Gemini 1.5 Flash {lang === 'zh' ? '直接提取语音中的时间、项目、毫升数并完成中英双语翻译。' : 'directly listens to the audio and extracts structured fields + bilingual notes.'}
+        2. {lang === 'zh' ? '睿仔云AI助理 (Reywoo AI Agent) 直接提取语音中的时间、项目、毫升数并完成中英双语翻译。' : 'Reywoo AI Agent directly listens to the audio and extracts structured fields + bilingual notes.'}
         <br />
         3. {lang === 'zh' ? '本地 Docker 容器已持久化保存所有记录。' : 'All logs are saved locally inside your Docker container database.'}
       </div>

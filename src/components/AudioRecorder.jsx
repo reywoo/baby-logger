@@ -256,8 +256,8 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
 
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: '1.5', marginBottom: '1.5rem' }}>
               {lang === 'zh'
-                ? '录音时长已超过 3 分钟限制。该录音已自动清空丢弃，未发送给 Gemini 解析。请重新录制一段简短语音。'
-                : 'Recording cannot exceed 3 minutes. Your audio data has been discarded and was not sent to Gemini. Please try again with a shorter recording.'}
+                ? '录音时长已超过 3 分钟限制。该录音已自动清空丢弃，未发送给睿仔云AI助理解析。请重新录制一段简短语音。'
+                : 'Recording cannot exceed 3 minutes. Your audio data has been discarded and was not sent to Reywoo AI Agent. Please try again with a shorter recording.'}
             </p>
 
             <button

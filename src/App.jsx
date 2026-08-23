@@ -31,7 +31,7 @@ const translations = {
     recording: '正在录音',
     tapToSpeak: '点击麦克风开始说话',
     tapToStop: '再按一下完成并解析',
-    processingAudio: 'Gemini AI 正在解析语音',
+    processingAudio: '睿仔云AI助理正在解析语音',
     confirmLogTitle: '确认提取的数据',
     categoryLabel: '类别 Category',
     amountLabel: '奶量 / 数量 Amount',
@@ -67,7 +67,7 @@ const translations = {
     recording: 'Recording',
     tapToSpeak: 'Tap microphone to speak',
     tapToStop: 'Tap to stop & process',
-    processingAudio: 'Gemini AI is analyzing audio',
+    processingAudio: 'Reywoo AI Agent is analyzing audio',
     confirmLogTitle: 'Confirm Extracted Log',
     categoryLabel: 'Category',
     amountLabel: 'Amount (ml/oz)',
@@ -624,7 +624,7 @@ export default function App() {
               }}>
                 <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
                 <Sparkles size={16} />
-                <span>{lang === 'zh' ? 'Gemini AI 正在解析文本...' : 'Gemini AI is parsing text input...'}</span>
+                <span>{lang === 'zh' ? '睿仔云AI助理正在解析文本...' : 'Reywoo AI Agent is parsing text input...'}</span>
               </div>
             )}
 
