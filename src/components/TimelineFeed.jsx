@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, CloudUpload, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle, Ruler } from 'lucide-react';
+import { Milk, Moon, Baby, HeartPulse, Activity, FileText, Trash2, Pencil, Clock, ChevronDown, ChevronRight, Calendar, Image as ImageIcon, X, AlertTriangle, Ruler } from 'lucide-react';
 import { parseDurationToMinutes } from '../utils/timeUtils';
 
 const SUBCATEGORY_META = {
@@ -532,11 +532,6 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                            {log.syncedToSheet && (
-                              <span title="Synced to Google Sheet" style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center' }}>
-                                <CloudUpload size={14} />
-                              </span>
-                            )}
                             <button
                               onClick={() => onEditLog && onEditLog(log)}
                               style={{

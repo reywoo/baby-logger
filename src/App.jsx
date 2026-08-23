@@ -100,7 +100,6 @@ export default function App() {
   const [isProcessingText, setIsProcessingText] = useState(false);
 
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('family_gemini_key') || '');
-  const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('family_webhook_url') || '');
 
   // Auth & Account States
   const [currentUser, setCurrentUser] = useState(null);
@@ -280,10 +279,6 @@ export default function App() {
       let reqHeaders = getAuthHeaders();
       let bodyData;
       const isEdit = !!finalData.id;
-
-      if (webhookUrl) {
-        reqHeaders['x-google-sheet-webhook'] = webhookUrl;
-      }
 
       if ((photos && photos.length > 0) || (removedAttachmentIds && removedAttachmentIds.length > 0)) {
         const formData = new FormData();
