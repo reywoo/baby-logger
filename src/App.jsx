@@ -440,7 +440,16 @@ export default function App() {
       </header>
 
       {/* 2. Preferences, User Info & Controls Bar */}
-      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0.55rem 0.85rem', background: 'rgba(15, 23, 42, 0.55)', borderColor: 'rgba(255, 255, 255, 0.12)', gap: '0.5rem' }}>
+      <div className="glass-panel" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '1rem',
+        padding: '0.45rem 0.85rem',
+        background: 'rgba(15, 23, 42, 0.55)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        gap: '0.6rem'
+      }}>
         {/* Left: Baby Profile / Age Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flexShrink: 0 }}>
           {babyProfile?.birthDate || babyProfile?.nickname || babyProfile?.firstName || babyProfile?.avatarUrl ? (
@@ -450,16 +459,16 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.45rem',
-                padding: '0.35rem 0.85rem',
+                padding: '0.3rem 0.75rem',
                 borderRadius: '20px',
                 background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.18), rgba(139, 92, 246, 0.18))',
                 border: '1px solid rgba(236, 72, 153, 0.4)',
                 color: 'var(--text-main)',
-                fontSize: '0.82rem',
+                fontSize: '0.85rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                maxWidth: '160px',
+                maxWidth: '180px',
               }}
               title={lang === 'zh' ? '点击修改宝宝档案与生日' : 'Click to edit baby profile & birthday'}
             >
@@ -467,7 +476,7 @@ export default function App() {
                 <img
                   src={babyProfile.avatarUrl}
                   alt="Baby"
-                  style={{ width: '20px', height: '20px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(236, 72, 153, 0.6)', flexShrink: 0 }}
+                  style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1.5px solid rgba(236, 72, 153, 0.6)', flexShrink: 0 }}
                 />
               ) : (
                 <Cake size={16} style={{ color: '#ec4899', flexShrink: 0 }} />
@@ -485,12 +494,12 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.45rem',
-                padding: '0.4rem 0.85rem',
+                padding: '0.35rem 0.85rem',
                 borderRadius: '20px',
                 background: 'linear-gradient(135deg, #ec4899, #8b5cf6)',
                 border: 'none',
                 color: '#fff',
-                fontSize: '0.82rem',
+                fontSize: '0.85rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 boxShadow: '0 2px 8px rgba(236, 72, 153, 0.3)',
@@ -503,7 +512,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Middle: Current User Badge (nickname || firstName || displayName || username with truncation) */}
+        {/* Middle: Current User Badge with Avatar + Username */}
         {(() => {
           const userDisplayName = currentUser?.nickname || currentUser?.firstName || currentUser?.displayName || currentUser?.username || 'User';
           return (
@@ -511,14 +520,15 @@ export default function App() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.35rem',
-                padding: '0.35rem 0.65rem',
-                borderRadius: '16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                fontSize: '0.78rem',
+                gap: '0.45rem',
+                padding: '0.28rem 0.75rem',
+                borderRadius: '20px',
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.15))',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                fontSize: '0.85rem',
                 color: 'var(--text-main)',
                 fontWeight: 600,
-                maxWidth: '130px',
+                maxWidth: '180px',
                 minWidth: 0,
                 flexShrink: 1,
               }}
@@ -527,11 +537,30 @@ export default function App() {
               {currentUser?.avatarUrl ? (
                 <img
                   src={currentUser.avatarUrl}
-                  alt="Avatar"
-                  style={{ width: '16px', height: '16px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+                  alt={userDisplayName}
+                  style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '1.5px solid rgba(99, 102, 241, 0.5)',
+                    flexShrink: 0
+                  }}
                 />
               ) : (
-                <User size={14} style={{ color: 'var(--primary-accent)', flexShrink: 0 }} />
+                <div style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: 'rgba(99, 102, 241, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  color: '#a5b4fc',
+                }}>
+                  <User size={13} />
+                </div>
               )}
               <span style={{
                 overflow: 'hidden',
@@ -553,7 +582,7 @@ export default function App() {
               background: 'rgba(239, 68, 68, 0.15)',
               border: '1px solid rgba(239, 68, 68, 0.3)',
               color: 'var(--danger)',
-              padding: '0.35rem 0.55rem',
+              padding: '0.35rem 0.6rem',
               borderRadius: '16px',
               cursor: 'pointer',
               display: 'flex',
