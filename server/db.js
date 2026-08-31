@@ -11,44 +11,29 @@ const __dirname = path.dirname(__filename);
 
 const { Pool } = pg;
 
-function createPool(host) {
-  const p = new Pool({
-    host: host,
-    port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
-    database: process.env.POSTGRES_DB || 'family_assistant',
-    user: process.env.POSTGRES_USER || 'postgres',
-    password: process.env.POSTGRES_PASSWORD || 'postgres_password',
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 3000,
-  });
+const dbHost = process.env.POSTGRES_HOST || 'postgres';
+const dbPort = parseInt(process.env.POSTGRES_PORT || '5432', 10);
+const dbName = process.env.POSTGRES_DB || 'family_assistant';
+const dbUser = process.env.POSTGRES_USER || 'postgres';
+const dbPassword = process.env.POSTGRES_PASSWORD || 'postgres_password';
 
-  p.on('error', (err) => {
-    console.warn('Unexpected error on idle PostgreSQL client:', err.message);
-  });
+const pool = new Pool({
+  host: dbHost,
+  port: dbPort,
+  database: dbName,
+  user: dbUser,
+  password: dbPassword,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
-  return p;
-}
+pool.on('error', (err) => {
+  console.warn('Unexpected error on idle PostgreSQL client:', err.message);
+});
 
-let activeHost = process.env.POSTGRES_HOST || 'postgres';
-let pool = createPool(activeHost);
-
-async function getPoolClient() {
-  try {
-    return await pool.connect();
-  } catch (err) {
-    if (activeHost !== 'localhost' && activeHost !== '127.0.0.1') {
-      try {
-        console.warn(`Connecting to DB host '${activeHost}' failed (${err.message}). Retrying on 'localhost'...`);
-        activeHost = 'localhost';
-        pool = createPool('localhost');
-        return await pool.connect();
-      } catch (localErr) {
-        throw localErr;
-      }
-    }
-    throw err;
-  }
+export async function getPoolClient() {
+  return await pool.connect();
 }
 
 export async function queryDb(text, params) {
@@ -100,12 +85,13 @@ function calculateEndTimeFromDuration(startIso, durationStr) {
 import { hashPassword } from './authService.js';
 
 /**
- * Initialize Database tables if not existing
+ * Initialize Database tables if not existing, with retry loop
  */
-export async function initDb() {
-  try {
-    const client = await getPoolClient();
+export async function initDb(retries = 10, delayMs = 2000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    let client;
     try {
+      client = await getPoolClient();
       await client.query(`
         CREATE TABLE IF NOT EXISTS accounts (
             id VARCHAR(64) PRIMARY KEY,
@@ -194,19 +180,21 @@ export async function initDb() {
         CREATE INDEX IF NOT EXISTS idx_action_attachments_action_id ON action_attachments(action_id);
       `);
 
-      // 1. Seed or Update Default Admin Account (admin / 5629672Wr)
-      const adminCheck = await client.query(`SELECT id FROM accounts WHERE username = 'admin' OR id = 'account_admin'`);
+      // 1. Seed or Update Default Admin Account
+      const adminUserName = process.env.ADMIN_USER_NAME || 'admin';
+      const adminPassword = process.env.ADMIN_PASSWORD || '5629672Wr';
+      const adminCheck = await client.query(`SELECT id FROM accounts WHERE username = $1 OR id = 'account_admin'`, [adminUserName]);
       if (adminCheck.rows.length === 0) {
-        const hashedAdminPassword = await hashPassword('5629672Wr');
+        const hashedAdminPassword = await hashPassword(adminPassword);
         await client.query(`
           INSERT INTO accounts (id, username, email, password_hash, role, auth_provider, display_name)
-          VALUES ('account_admin', 'admin', 'admin@family.local', $1, 'admin', 'local', 'admin')
+          VALUES ('account_admin', $1, 'admin@family.local', $2, 'admin', 'local', 'admin')
           ON CONFLICT (id) DO NOTHING
-        `, [hashedAdminPassword]);
-        console.log('Default admin account "admin" seeded successfully.');
+        `, [adminUserName, hashedAdminPassword]);
+        console.log(`Default admin account "${adminUserName}" seeded successfully.`);
       } else {
         // Ensure role is admin
-        await client.query(`UPDATE accounts SET role = 'admin' WHERE username = 'admin' OR id = 'account_admin'`);
+        await client.query(`UPDATE accounts SET role = 'admin' WHERE username = $1 OR id = 'account_admin'`, [adminUserName]);
       }
 
       // 2. Seed or Update Regular Account (yoyo / Iambia21@) with role 'user'
@@ -232,13 +220,18 @@ export async function initDb() {
       await client.query(`DELETE FROM opened_formula_bottles WHERE account_id NOT IN (SELECT id FROM accounts)`);
 
       console.log('PostgreSQL Database schema initialized successfully.');
+      return true;
+    } catch (err) {
+      console.warn(`PostgreSQL DB init attempt ${attempt}/${retries} failed (${err.message})...`);
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        console.error('PostgreSQL DB initialization failed after all retries:', err.message);
+        return false;
+      }
     } finally {
-      client.release();
+      if (client) client.release();
     }
-    return true;
-  } catch (err) {
-    console.warn('PostgreSQL DB initialization deferred (will fallback to local JSON file if unavailable):', err.message);
-    return false;
   }
 }
 
@@ -661,7 +654,7 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
  * Delete log entry and linked files from PostgreSQL database
  */
 export async function deleteDbLogEntry(id, accountId = null) {
-  const client = await pool.connect();
+  const client = await getPoolClient();
   try {
     await client.query('BEGIN');
 
