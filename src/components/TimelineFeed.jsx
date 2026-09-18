@@ -122,36 +122,42 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     }
   };
 
-  // Format date key YYYY-MM-DD from startTime, timestamp or displayDate
+  const formatTorontoDateKey = (dateObj) => {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Toronto',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(dateObj);
+    } catch (e) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+  };
+
+  // Format date key YYYY-MM-DD from startTime, timestamp or displayDate (America/Toronto)
   const getLogDateKey = (log) => {
     const rawTime = log.startTime || log.timestamp || log.displayDate;
     if (rawTime) {
       const d = new Date(rawTime);
       if (!isNaN(d.getTime())) {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+        return formatTorontoDateKey(d);
       }
     }
     return log.displayDate || 'Unknown';
   };
 
   const todayKey = (() => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatTorontoDateKey(new Date());
   })();
 
   const yesterdayKey = (() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatTorontoDateKey(d);
   })();
 
   const [selectedDays, setSelectedDays] = useState(() => {
@@ -321,7 +327,11 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     if (!isoStr) return '';
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto' });
+    } catch (e) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
   };
 
   const formatLogTiming = (log) => {

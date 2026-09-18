@@ -93,9 +93,91 @@ BABY PROFILE CONTEXT:
 }
 
 /**
+ * Helper to compute timezone metadata for Eastern Time / user timezone.
+ * Defaults to America/Toronto (Toronto / Eastern Time).
+ */
+export function getTimezoneContext(clientTimezone = null, clientIso = null) {
+  const timeZone = clientTimezone || process.env.APP_TIMEZONE || 'America/Toronto';
+  const baseDate = clientIso ? new Date(clientIso) : new Date();
+  const date = isNaN(baseDate.getTime()) ? new Date() : baseDate;
+
+  let offset = '-04:00';
+  let isoLocal = '';
+  let readable = '';
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZoneName: 'longOffset',
+    }).formatToParts(date);
+
+    const m = {};
+    parts.forEach((p) => { m[p.type] = p.value; });
+
+    let rawOffset = (m.timeZoneName || 'GMT').replace('GMT', '').trim();
+    if (!rawOffset.startsWith('+') && !rawOffset.startsWith('-')) {
+      rawOffset = '+00:00';
+    }
+    offset = rawOffset;
+    isoLocal = `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}${offset}`;
+    readable = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      dateStyle: 'full',
+      timeStyle: 'medium',
+    }).format(date);
+  } catch (err) {
+    console.warn(`Error resolving timezone context for ${timeZone}:`, err.message);
+    offset = '-04:00';
+    isoLocal = date.toISOString();
+    readable = date.toUTCString();
+  }
+
+  return {
+    timeZone,
+    offset,
+    isoLocal,
+    readable,
+    utcIso: date.toISOString(),
+  };
+}
+
+/**
+ * Normalize timestamp returned by Gemini to ensure it carries valid timezone information
+ */
+function normalizeTimestamp(ts, defaultIso, tzOffset) {
+  if (!ts || typeof ts !== 'string') return defaultIso;
+  const trimmed = ts.trim();
+  if (!trimmed) return defaultIso;
+
+  // Case 1: Already has timezone offset like +00:00, -04:00 or Z
+  if (/[Zz]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Case 2: Standard ISO without offset e.g. 2026-09-18T14:00:00 or 2026-09-18 14:00:00
+  const normalized = trimmed.replace(' ', 'T');
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(normalized)) {
+    return `${normalized}${tzOffset}`;
+  }
+
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString();
+  }
+  return defaultIso;
+}
+
+/**
  * Service to process multimodal audio input or natural text with Gemini
  */
-export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null, babyProfile = null) {
+export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, subCategoriesMap = null, babyProfile = null, options = {}) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
@@ -106,14 +188,29 @@ export async function processAudioWithGemini(audioBuffer, mimeType, userApiKey, 
 
   const ai = new GoogleGenAI({ apiKey });
   const base64Audio = audioBuffer.toString('base64');
-  const currentIso = new Date().toISOString();
+  
+  const tzContext = getTimezoneContext(options?.timezone, options?.clientIso);
+  const { timeZone, offset, isoLocal, readable, utcIso } = tzContext;
 
   const subCatRules = formatSubCategoryRules(subCategoriesMap, hasBirthDate);
   const categoriesList = hasBirthDate
     ? '"feeding", "sleep", "diaper", "growth", "health", "activity", or "other"'
     : '"feeding", "sleep", "diaper", "health", "activity", or "other" (NOTE: "growth" is DISABLED because baby birthday is not set)';
 
-  const prompt = `You are a helpful family assistant & baby activity logger. Current ISO time is: ${currentIso}.
+  const prompt = `You are a helpful family assistant & baby activity logger.
+CURRENT USER TIME & TIMEZONE CONTEXT:
+- The user and speaker are located in Toronto, Canada (Eastern Time, timezone: ${timeZone}).
+- Current Toronto local time: ${readable} (ISO with offset: ${isoLocal}).
+- Current UTC ISO time: ${utcIso}.
+- Toronto timezone offset is currently: ${offset}.
+
+CRITICAL TIMEZONE RULE:
+- All clock times spoken or mentioned by the user (e.g. "下午2点", "2pm", "14:00", "早上10点", "10:00 AM", "10:30") are strictly in Eastern Time (Toronto local time).
+- When outputting ISO 8601 strings for "startTime" and "endTime", you MUST output timestamps with the Toronto timezone offset ${offset} (e.g. "${isoLocal.slice(0, 10)}T14:00:00${offset}") or equivalent valid UTC string corresponding to that exact Eastern Time.
+- NEVER confuse Eastern Time with UTC. If the speaker says "下午2点" (2:00 PM), startTime MUST correspond to 2:00 PM Eastern Time ("${isoLocal.slice(0, 10)}T14:00:00${offset}"), NOT 14:00 UTC ("${isoLocal.slice(0, 10)}T14:00:00Z")!
+- If the speaker does not mention a specific time (e.g. "刚刚", "刚换了", "just now", or no time mentioned), default "startTime" to the current local time: "${isoLocal}".
+- If relative time is mentioned (e.g. "30 mins ago", "半小时前", "10分钟前"), calculate against "${isoLocal}".
+
 Listen carefully to the audio clip provided. The speaker may be using Chinese (Mandarin), English, or a mix of both.
 ${babyContext}
 Extract and structure the activity log into a clean JSON object.
@@ -125,8 +222,8 @@ ${subCatRules}
    - CRITICAL: You MUST choose one of the exact subcategories listed above for the chosen category. Do NOT invent or output new custom subcategories.
 3. Identify any amounts (e.g. 120 ml, 4 oz, 5.2 kg, 60 cm, 36.8 C), duration (e.g. 45 mins, 1.5 hrs), or status.
 4. Identify action timing:
-   - "startTime": ISO timestamp when the action started (e.g., if mentioned "at 2pm" or "30 mins ago", calculate against current ISO time. Otherwise default to current ISO time).
-   - "endTime": ISO timestamp when the action ended. CRITICAL: For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime", and set "duration" to null.
+   - "startTime": ISO timestamp with offset ${offset} when the action started (e.g. calculate against "${isoLocal}").
+   - "endTime": ISO timestamp with offset ${offset} when the action ended. CRITICAL: For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime", and set "duration" to null.
    - For interval categories ("feeding", "sleep", "activity", "other"), set "endTime" and "duration" when mentioned or calculated.
 5. "summaryEn" (English Description): Provide a clean, natural, slightly formatted and corrected English sentence reflecting what the speaker said in audio (fix mumbling, hesitations, or disfluencies into clear natural sentences).
 6. "originalZh" (Chinese Description): Provide a clean, natural, slightly formatted and corrected Chinese sentence reflecting what the speaker said in audio (fix mumbling, hesitations, or disfluencies into clear natural sentences).
@@ -138,8 +235,8 @@ Return ONLY a valid JSON object matching this exact structure:
   "subCategory": "one of the fixed subcategory strings for the chosen category",
   "amount": "120 ml, 36.8 C, or null",
   "duration": "1 hr or null",
-  "startTime": "ISO 8601 string",
-  "endTime": "ISO 8601 string",
+  "startTime": "ISO 8601 string with ${offset} offset",
+  "endTime": "ISO 8601 string with ${offset} offset",
   "summaryEn": "Formatted English description of what was spoken",
   "originalZh": "Formatted Chinese description of what was spoken",
   "notes": "Additional details or null"
@@ -165,7 +262,16 @@ Return ONLY a valid JSON object matching this exact structure:
     const config = { responseMimeType: 'application/json' };
 
     const response = await generateWithGemini(ai, contents, config);
-    return extractJsonObject(response.text);
+    const parsed = extractJsonObject(response.text);
+    if (parsed) {
+      parsed.startTime = normalizeTimestamp(parsed.startTime, isoLocal, offset);
+      if (parsed.endTime) {
+        parsed.endTime = normalizeTimestamp(parsed.endTime, parsed.startTime, offset);
+      } else {
+        parsed.endTime = parsed.startTime;
+      }
+    }
+    return parsed;
   } catch (error) {
     console.error('Gemini Audio Processing Error:', error);
     throw new Error(`Failed to process audio with Gemini: ${error.message}`);
@@ -175,7 +281,7 @@ Return ONLY a valid JSON object matching this exact structure:
 /**
  * Process text prompt fallback with Gemini
  */
-export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null, babyProfile = null) {
+export async function processTextWithGemini(textInput, userApiKey, subCategoriesMap = null, babyProfile = null, options = {}) {
   const apiKey = userApiKey || process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Gemini API key is required. Please set GEMINI_API_KEY in environment or settings.');
@@ -185,13 +291,28 @@ export async function processTextWithGemini(textInput, userApiKey, subCategories
   const babyContext = formatBabyProfileContext(babyProfile);
 
   const ai = new GoogleGenAI({ apiKey });
-  const currentIso = new Date().toISOString();
+  const tzContext = getTimezoneContext(options?.timezone, options?.clientIso);
+  const { timeZone, offset, isoLocal, readable, utcIso } = tzContext;
+
   const subCatRules = formatSubCategoryRules(subCategoriesMap, hasBirthDate);
   const categoriesList = hasBirthDate
     ? '"feeding", "sleep", "diaper", "growth", "health", "activity", or "other"'
     : '"feeding", "sleep", "diaper", "health", "activity", or "other" (NOTE: "growth" is DISABLED because baby birthday is not set)';
 
-  const prompt = `You are a family assistant & baby log parser. Current ISO time is: ${currentIso}.
+  const prompt = `You are a family assistant & baby log parser.
+CURRENT USER TIME & TIMEZONE CONTEXT:
+- The user and speaker are located in Toronto, Canada (Eastern Time, timezone: ${timeZone}).
+- Current Toronto local time: ${readable} (ISO with offset: ${isoLocal}).
+- Current UTC ISO time: ${utcIso}.
+- Toronto timezone offset is currently: ${offset}.
+
+CRITICAL TIMEZONE RULE:
+- All clock times spoken or written by the user (e.g. "下午2点", "2pm", "14:00", "早上10点", "10:00 AM", "10:30") are strictly in Eastern Time (Toronto local time).
+- When outputting ISO 8601 strings for "startTime" and "endTime", you MUST output timestamps with the Toronto timezone offset ${offset} (e.g. "${isoLocal.slice(0, 10)}T14:00:00${offset}") or equivalent valid UTC string corresponding to that exact Eastern Time.
+- NEVER confuse Eastern Time with UTC. If user text says "下午2点" (2:00 PM), startTime MUST correspond to 2:00 PM Eastern Time ("${isoLocal.slice(0, 10)}T14:00:00${offset}"), NOT 14:00 UTC ("${isoLocal.slice(0, 10)}T14:00:00Z")!
+- If the user does not mention a specific time (e.g. "刚刚", "刚换了", "just now", or no time mentioned), default "startTime" to the current local time: "${isoLocal}".
+- If relative time is mentioned (e.g. "30 mins ago", "半小时前", "10分钟前"), calculate against "${isoLocal}".
+
 ${babyContext}
 Parse this user log text entry: "${textInput}". The text may be in Chinese, English, or mixed.
 
@@ -201,8 +322,8 @@ Extract timing & category details:
 ${!hasBirthDate ? '- CRITICAL: Baby birth date is NOT set. You MUST NOT categorize into "growth". Use "other" or another suitable category.\n' : ''}- "subCategory": MUST be chosen from one of these fixed allowed subcategories for each category:
 ${subCatRules}
   - CRITICAL: You MUST choose one of the exact subcategories listed above for the chosen category. Do NOT invent or output new custom subcategories.
-- "startTime": ISO timestamp of when action started.
-- "endTime": ISO timestamp of when action ended. For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime" and set "duration" to null.
+- "startTime": ISO timestamp with offset ${offset} of when action started.
+- "endTime": ISO timestamp with offset ${offset} of when action ended. For instant categories ("diaper", "growth", and "health"), ALWAYS set "endTime" equal to "startTime" and set "duration" to null.
 - Note: Since this input is text-based (not audio), set "summaryEn" to "N/A" and "originalZh" to "N/A".
 - "notes": Put the user's entered text or any extra notes here.
 
@@ -212,8 +333,8 @@ Return ONLY a valid JSON object:
   "subCategory": "one of the fixed subcategory strings for the chosen category",
   "amount": "e.g. 120 ml, 36.8 C, or null",
   "duration": "e.g. 1 hr or null",
-  "startTime": "ISO 8601 string",
-  "endTime": "ISO 8601 string",
+  "startTime": "ISO 8601 string with ${offset} offset",
+  "endTime": "ISO 8601 string with ${offset} offset",
   "summaryEn": "N/A",
   "originalZh": "N/A",
   "notes": "${textInput.replace(/"/g, "'")}"
@@ -224,12 +345,22 @@ Return ONLY a valid JSON object:
     const config = { responseMimeType: 'application/json' };
 
     const response = await generateWithGemini(ai, contents, config);
-    return extractJsonObject(response.text);
+    const parsed = extractJsonObject(response.text);
+    if (parsed) {
+      parsed.startTime = normalizeTimestamp(parsed.startTime, isoLocal, offset);
+      if (parsed.endTime) {
+        parsed.endTime = normalizeTimestamp(parsed.endTime, parsed.startTime, offset);
+      } else {
+        parsed.endTime = parsed.startTime;
+      }
+    }
+    return parsed;
   } catch (error) {
     console.error('Gemini Text Processing Error:', error);
     throw new Error(`Failed to process text with Gemini: ${error.message}`);
   }
 }
+
 
 /**
  * Generate or translate notes into pure Chinese and pure English versions using Gemini

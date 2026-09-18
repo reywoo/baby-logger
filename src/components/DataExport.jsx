@@ -140,8 +140,8 @@ export default function DataExport({ logs = [], lang, getAuthHeaders }) {
     const csvRows = [headers.join(',')];
 
     for (const log of items) {
-      const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString() : '');
-      const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+      const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }) : '');
+      const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto' }) : '');
       const row = [
         escapeCsv(log.id),
         escapeCsv(dDate),

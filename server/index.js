@@ -406,12 +406,17 @@ app.post('/api/process-audio', authenticateToken, uploadAudio.single('audio'), a
 
     const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
     const mimeType = req.file.mimetype || 'audio/webm';
+    const clientTimezone = req.headers['x-client-timezone'] || req.body?.timezone || process.env.APP_TIMEZONE || 'America/Toronto';
+    const clientIso = req.headers['x-client-time'] || req.body?.clientTime || null;
     
-    console.log(`Processing audio snippet (${req.file.size} bytes, ${mimeType})...`);
+    console.log(`Processing audio snippet (${req.file.size} bytes, ${mimeType}, timezone: ${clientTimezone})...`);
 
     const babyProfile = await fetchUserBabyProfile(req.user?.id);
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap, babyProfile);
+    const parsedLog = await processAudioWithGemini(req.file.buffer, mimeType, apiKey, subCategoriesMap, babyProfile, {
+      timezone: clientTimezone,
+      clientIso,
+    });
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-audio error:', error);
@@ -422,15 +427,21 @@ app.post('/api/process-audio', authenticateToken, uploadAudio.single('audio'), a
 // 2. Process Text Fallback with Gemini
 app.post('/api/process-text', authenticateToken, async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, timezone, clientTime } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Text input is required' });
     }
 
     const apiKey = req.headers['x-gemini-api-key'] || process.env.GEMINI_API_KEY;
+    const clientTimezone = timezone || req.headers['x-client-timezone'] || process.env.APP_TIMEZONE || 'America/Toronto';
+    const clientIso = clientTime || req.headers['x-client-time'] || null;
+
     const babyProfile = await fetchUserBabyProfile(req.user?.id);
     const subCategoriesMap = await getExistingSubCategories();
-    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap, babyProfile);
+    const parsedLog = await processTextWithGemini(text, apiKey, subCategoriesMap, babyProfile, {
+      timezone: clientTimezone,
+      clientIso,
+    });
     res.json({ success: true, data: parsedLog });
   } catch (error) {
     console.error('API /process-text error:', error);
@@ -524,8 +535,8 @@ app.get('/api/logs/export', authenticateToken, async (req, res) => {
       const csvRows = [headers.join(',')];
 
       for (const log of logs) {
-        const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString() : '');
-        const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+        const dDate = log.displayDate || (log.startTime ? new Date(log.startTime).toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }) : '');
+        const dTime = log.displayTime || (log.startTime ? new Date(log.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto' }) : '');
         const row = [
           escapeCsv(log.id),
           escapeCsv(dDate),

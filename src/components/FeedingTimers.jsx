@@ -256,7 +256,11 @@ export default function FeedingTimers({ onOpenFeedingModal, getAuthHeaders, lang
 
   const formatTimeStr = (isoStr) => {
     if (!isoStr) return '--';
-    return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+      return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'America/Toronto' });
+    } catch (e) {
+      return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
   };
 
   const calculateBottleRemaining = (expiresAtIso, openedAtIso) => {

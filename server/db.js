@@ -82,6 +82,28 @@ function calculateEndTimeFromDuration(startIso, durationStr) {
   return new Date(start.getTime() + minutes * 60 * 1000).toISOString();
 }
 
+const APP_TIMEZONE = process.env.APP_TIMEZONE || 'America/Toronto';
+
+function formatDisplayTime(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: APP_TIMEZONE,
+  });
+}
+
+function formatDisplayDate(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', {
+    timeZone: APP_TIMEZONE,
+  });
+}
+
 import { hashPassword } from './authService.js';
 
 /**
@@ -308,8 +330,8 @@ export async function getDbLogs(accountId = null) {
     return {
       ...row,
       duration: dur,
-      displayTime: new Date(row.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      displayDate: new Date(row.startTime).toLocaleDateString(),
+      displayTime: formatDisplayTime(row.startTime),
+      displayDate: formatDisplayDate(row.startTime),
       timestamp: row.startTime,
     };
   });
@@ -390,8 +412,8 @@ export async function getDbLogsFiltered({ accountId = null, startDate, endDate, 
     return {
       ...row,
       duration: dur,
-      displayTime: new Date(row.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      displayDate: new Date(row.startTime).toLocaleDateString(),
+      displayTime: formatDisplayTime(row.startTime),
+      displayDate: formatDisplayDate(row.startTime),
       timestamp: row.startTime,
     };
   });
@@ -489,8 +511,8 @@ export async function saveDbLogEntry(logData, attachments = [], accountId = null
       endTime,
       recordedAt,
       timestamp: startTime,
-      displayTime: new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      displayDate: new Date(startTime).toLocaleDateString(),
+      displayTime: formatDisplayTime(startTime),
+      displayDate: formatDisplayDate(startTime),
       amount,
       duration,
       summaryEn,
@@ -631,8 +653,8 @@ export async function updateDbLogEntry(id, logData, newAttachments = [], removed
       endTime: updatedRow.end_time,
       recordedAt: updatedRow.recorded_at,
       timestamp: updatedRow.start_time,
-      displayTime: new Date(updatedRow.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      displayDate: new Date(updatedRow.start_time).toLocaleDateString(),
+      displayTime: formatDisplayTime(updatedRow.start_time),
+      displayDate: formatDisplayDate(updatedRow.start_time),
       amount: updatedRow.amount,
       duration: updatedRow.duration,
       summaryEn: updatedRow.summary_en,

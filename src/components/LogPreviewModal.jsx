@@ -42,15 +42,91 @@ const PRESET_SUBCATEGORIES = {
 };
 
 // Helper to format ISO string or Date to HTML5 datetime-local string (YYYY-MM-DDTHH:MM)
+// Enforces America/Toronto (Eastern Time)
 function toDatetimeLocal(isoOrDateStr) {
-  const d = isoOrDateStr ? new Date(isoOrDateStr) : new Date();
+  if (!isoOrDateStr) {
+    const d = new Date();
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Toronto',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(d);
+      const m = {};
+      parts.forEach((p) => { m[p.type] = p.value; });
+      return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
+    } catch (e) {
+      return d.toISOString().slice(0, 16);
+    }
+  }
+
+  // If already a plain local datetime string YYYY-MM-DDTHH:MM
+  if (typeof isoOrDateStr === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(isoOrDateStr)) {
+    return isoOrDateStr;
+  }
+
+  const d = new Date(isoOrDateStr);
   if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 16);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Toronto',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const m = {};
+    parts.forEach((p) => { m[p.type] = p.value; });
+    return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
+  } catch (e) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+}
+
+// Convert local datetime-local string (YYYY-MM-DDTHH:MM) to ISO string in America/Toronto timezone
+function localDatetimeToIso(localStr) {
+  if (!localStr) return new Date().toISOString();
+  if (localStr.includes('Z') || /[+-]\d{2}:\d{2}$/.test(localStr)) {
+    const d = new Date(localStr);
+    return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+  }
+  const clean = localStr.replace(' ', 'T');
+  try {
+    const d = new Date(clean);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Toronto',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZoneName: 'longOffset',
+    }).formatToParts(isNaN(d.getTime()) ? new Date() : d);
+    const m = {};
+    parts.forEach((p) => { m[p.type] = p.value; });
+    let offset = (m.timeZoneName || 'GMT').replace('GMT', '').trim() || '-04:00';
+    if (!offset.startsWith('+') && !offset.startsWith('-')) offset = '-04:00';
+    const withOffset = clean.length === 16 ? `${clean}:00${offset}` : `${clean}${offset}`;
+    const parsed = new Date(withOffset);
+    return !isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+  } catch (e) {
+    const d = new Date(clean);
+    return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+  }
 }
 
 function extractNumberOnly(val) {
@@ -184,16 +260,12 @@ export default function LogPreviewModal({ data, onSave, onClose, lang, t, birthD
       let entryToSave = overrideEntry;
 
       if (!entryToSave) {
-        let startIso;
-        const sDate = startTime ? new Date(startTime) : new Date();
-        startIso = !isNaN(sDate.getTime()) ? sDate.toISOString() : new Date().toISOString();
-
+        const startIso = localDatetimeToIso(startTime);
         let endIso;
         if (isInstantCategory) {
           endIso = startIso;
         } else if (endTime) {
-          const eDate = new Date(endTime);
-          endIso = !isNaN(eDate.getTime()) ? eDate.toISOString() : startIso;
+          endIso = localDatetimeToIso(endTime);
         } else {
           endIso = startIso;
         }

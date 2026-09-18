@@ -36,6 +36,28 @@ export async function getFallbackLogs() {
   return getLocalLogs();
 }
 
+const APP_TIMEZONE = process.env.APP_TIMEZONE || 'America/Toronto';
+
+function formatDisplayTime(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: APP_TIMEZONE,
+  });
+}
+
+function formatDisplayDate(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-CA', {
+    timeZone: APP_TIMEZONE,
+  });
+}
+
 /**
  * Save log locally in JSON fallback storage
  */
@@ -49,8 +71,8 @@ export async function saveFallbackLogEntry(logData) {
     startTime: startTime,
     endTime: endTime,
     recordedAt: logData.recordedAt || new Date().toISOString(),
-    displayTime: new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    displayDate: new Date(startTime).toLocaleDateString(),
+    displayTime: formatDisplayTime(startTime),
+    displayDate: formatDisplayDate(startTime),
     category: logData.category || 'other',
     subCategory: logData.subCategory || 'other',
     amount: logData.amount || '',
@@ -97,8 +119,8 @@ export function updateFallbackLogEntry(id, logData) {
     startTime,
     endTime,
     timestamp: startTime,
-    displayTime: new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    displayDate: new Date(startTime).toLocaleDateString(),
+    displayTime: formatDisplayTime(startTime),
+    displayDate: formatDisplayDate(startTime),
   };
 
   fs.writeFileSync(LOCAL_DB_FILE, JSON.stringify(logs, null, 2));

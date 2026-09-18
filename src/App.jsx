@@ -352,13 +352,23 @@ export default function App() {
     setIsProcessingText(true);
 
     try {
-      const headers = getAuthHeaders({ 'Content-Type': 'application/json' });
+      const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto';
+      const clientIso = new Date().toISOString();
+      const headers = getAuthHeaders({
+        'Content-Type': 'application/json',
+        'x-client-timezone': clientTz,
+        'x-client-time': clientIso,
+      });
       if (apiKey) headers['x-gemini-api-key'] = apiKey;
 
       const res = await fetch('/api/process-text', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: currentInput }),
+        body: JSON.stringify({
+          text: currentInput,
+          timezone: clientTz,
+          clientTime: clientIso,
+        }),
       });
 
       if (res.status === 401) {

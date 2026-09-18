@@ -9,8 +9,10 @@ RUN npm run build
 # Stage 2: Production Server
 FROM node:20-alpine
 WORKDIR /app
+RUN apk add --no-cache tzdata
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV TZ=America/Toronto
 
 COPY package*.json ./
 RUN npm ci --only=production

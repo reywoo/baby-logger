@@ -140,10 +140,17 @@ export default function AudioRecorder({ onAudioProcessed, lang, apiKey, t }) {
     setErrorMsg('');
 
     try {
+      const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto';
+      const clientIso = new Date().toISOString();
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('timezone', clientTz);
+      formData.append('clientTime', clientIso);
 
-      const headers = {};
+      const headers = {
+        'x-client-timezone': clientTz,
+        'x-client-time': clientIso,
+      };
       if (apiKey) {
         headers['x-gemini-api-key'] = apiKey;
       }

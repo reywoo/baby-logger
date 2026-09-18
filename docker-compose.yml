@@ -9,6 +9,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-family_assistant}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
+      TZ: ${TZ:-America/Toronto}
     ports:
       - '5432:5432'
     volumes:
@@ -25,6 +26,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      TZ: ${TZ:-America/Toronto}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Toronto}
     ports:
       - '3000:3000'
     volumes:
