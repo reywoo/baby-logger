@@ -240,7 +240,35 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
       return sum + (match ? parseInt(match[1], 10) : 0);
     }, 0);
 
-  const diaperCount = todayLogs.filter((l) => l.category === 'diaper').length;
+  const getDiaperStats = (logsList) => {
+    let pee = 0;
+    let poop = 0;
+    const diaperLogs = logsList.filter((l) => l.category === 'diaper');
+    diaperLogs.forEach((l) => {
+      const sub = (l.subCategory || '').toLowerCase();
+      const text = `${l.originalZh || ''} ${l.summaryEn || ''} ${l.notes || ''} ${l.notesZh || ''} ${l.notesEn || ''}`.toLowerCase();
+      let isPee = false;
+      let isPoop = false;
+      if (sub === 'wet') {
+        isPee = true;
+      } else if (sub === 'dirty') {
+        isPoop = true;
+      } else if (sub === 'both') {
+        isPee = true;
+        isPoop = true;
+      } else {
+        if (/wet|pee|小便|尿|嘘嘘/.test(text)) isPee = true;
+        if (/dirty|poop|便|屎|粑粑|大便/.test(text)) isPoop = true;
+        if (!isPee && !isPoop) isPee = true;
+      }
+      if (isPee) pee++;
+      if (isPoop) poop++;
+    });
+    return { total: diaperLogs.length, pee, poop };
+  };
+
+  const todayDiaperStats = useMemo(() => getDiaperStats(todayLogs), [todayLogs]);
+  const diaperCount = todayDiaperStats.total;
   const sleepCount = todayLogs.filter((l) => l.category === 'sleep').length;
   const totalSleepMinutes = todayLogs
     .filter((l) => l.category === 'sleep')
@@ -297,8 +325,16 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
     const sCount = sLogs.length;
     const sMins = sLogs.reduce((sum, l) => sum + getLogSleepMinutes(l), 0);
 
-    const diaper = dayLogs.filter((l) => l.category === 'diaper').length;
-    return { milk, fCount, sCount, sMins, diaper };
+    const diaperStats = getDiaperStats(dayLogs);
+    return {
+      milk,
+      fCount,
+      sCount,
+      sMins,
+      diaper: diaperStats.total,
+      pee: diaperStats.pee,
+      poop: diaperStats.poop,
+    };
   };
 
   const getDateLabel = (key) => {
@@ -392,7 +428,15 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
             {diaperCount} <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{isZh ? '次' : (diaperCount === 1 ? 'time' : 'times')}</span>
           </div>
           <div style={{ fontSize: '0.75rem', color: '#22d3ee', fontWeight: 700, marginTop: '0.15rem' }}>
-            {isZh ? '尿布更换' : 'changes'}
+            {diaperCount > 0 ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', whiteSpace: 'nowrap' }}>
+                <span>💧 {todayDiaperStats.pee}</span>
+                <span style={{ opacity: 0.5 }}>•</span>
+                <span style={{ color: '#f59e0b' }}>💩 {todayDiaperStats.poop}</span>
+              </span>
+            ) : (
+              isZh ? '尿布更换' : 'changes'
+            )}
           </div>
           <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{t.totalDiaper}</div>
         </div>
@@ -456,7 +500,7 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '1rem 1.25rem',
+                  padding: '0.85rem 1rem',
                   background: isToday ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
                   border: 'none',
                   color: 'var(--text-main)',
@@ -464,45 +508,86 @@ export default function TimelineFeed({ logs, onEditLog, onDeleteLog, lang, t }) 
                   textAlign: 'left',
                   borderBottom: isExpanded ? '1px solid var(--card-border)' : 'none',
                   transition: 'background 0.2s ease',
+                  gap: '0.4rem',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <Calendar size={18} style={{ color: isToday ? 'var(--primary-accent)' : 'var(--text-muted)' }} />
-                  <span style={{ fontWeight: 700, fontSize: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexShrink: 0 }}>
+                  <Calendar size={18} style={{ color: isToday ? 'var(--primary-accent)' : 'var(--text-muted)', flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700, fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                     {getDateLabel(dateKey)}
-                  </span>
-                  <span style={{
-                    fontSize: '0.75rem',
-                    background: 'rgba(255,255,255,0.08)',
-                    padding: '0.15rem 0.5rem',
-                    borderRadius: '1rem',
-                    color: 'var(--text-muted)'
-                  }}>
-                    {dayLogs.length} {isZh ? '条记录' : 'logs'}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, justifyContent: 'flex-end' }}>
                   {/* Daily Mini Summary Badges */}
-                  <div style={{ display: 'flex', gap: '0.4rem', fontSize: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {summary.milk > 0 && (
-                      <span style={{ color: 'var(--feeding-color)', fontWeight: 600, background: 'rgba(236,72,153,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
+                      <span style={{
+                        color: 'var(--feeding-color)',
+                        fontWeight: 600,
+                        background: 'rgba(236,72,153,0.1)',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '0.5rem',
+                        whiteSpace: 'nowrap',
+                      }}>
                         🥛 {summary.milk}ml ({summary.fCount}{isZh ? '次' : 'x'})
                       </span>
                     )}
                     {(summary.sMins > 0 || summary.sCount > 0) && (
-                      <span style={{ color: 'var(--sleep-color)', fontWeight: 600, background: 'rgba(139,92,246,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
+                      <span style={{
+                        color: 'var(--sleep-color)',
+                        fontWeight: 600,
+                        background: 'rgba(139,92,246,0.1)',
+                        padding: '0.15rem 0.4rem',
+                        borderRadius: '0.5rem',
+                        whiteSpace: 'nowrap',
+                      }}>
                         😴 {formatTotalSleepDisplay(summary.sMins, isZh)} ({summary.sCount}{isZh ? '次' : 'x'})
                       </span>
                     )}
                     {summary.diaper > 0 && (
-                      <span style={{ color: 'var(--diaper-color)', fontWeight: 600, background: 'rgba(6,182,212,0.1)', padding: '0.15rem 0.4rem', borderRadius: '0.5rem' }}>
-                        👶 {summary.diaper}{isZh ? '次' : 'x'}
-                      </span>
+                      <>
+                        <span
+                          title={isZh ? `小便 ${summary.pee} 次` : `Pee: ${summary.pee}`}
+                          style={{
+                            color: 'var(--diaper-color)',
+                            fontWeight: 600,
+                            background: 'rgba(6,182,212,0.12)',
+                            padding: '0.15rem 0.4rem',
+                            borderRadius: '0.5rem',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.15rem',
+                          }}
+                        >
+                          💧 {summary.pee}{isZh ? '次' : 'x'}
+                        </span>
+                        <span
+                          title={isZh ? `大便 ${summary.poop} 次` : `Poop: ${summary.poop}`}
+                          style={{
+                            color: '#f59e0b',
+                            fontWeight: 600,
+                            background: 'rgba(245,158,11,0.12)',
+                            padding: '0.15rem 0.4rem',
+                            borderRadius: '0.5rem',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.15rem',
+                          }}
+                        >
+                          💩 {summary.poop}{isZh ? '次' : 'x'}
+                        </span>
+                      </>
                     )}
                   </div>
 
-                  {isExpanded ? <ChevronDown size={20} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={20} style={{ color: 'var(--text-muted)' }} />}
+                  {isExpanded ? (
+                    <ChevronDown size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  ) : (
+                    <ChevronRight size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  )}
                 </div>
               </button>
 
